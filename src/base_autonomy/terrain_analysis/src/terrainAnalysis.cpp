@@ -22,6 +22,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/console/print.h>
 
 #include "message_filters/subscriber.h"
 #include "message_filters/synchronizer.h"
@@ -204,6 +205,10 @@ void clearingHandler(const std_msgs::msg::Float32::ConstSharedPtr dis) {
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
+  
+  // Suppress PCL warnings about missing fields (e.g., intensity field when receiving XYZ RGB data)
+  pcl::console::setVerbosityLevel(pcl::console::L_ERROR);
+  
   auto nh = rclcpp::Node::make_shared("terrainAnalysis");
 
   nh->declare_parameter<double>("scanVoxelSize", scanVoxelSize);
