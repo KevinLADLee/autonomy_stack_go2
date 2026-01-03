@@ -25,6 +25,7 @@ set (
   unitree_api
   rclcpp
   std_msgs
+  geometry_msgs
   # rosbag2_cpp
   sensor_msgs
 )
@@ -35,6 +36,7 @@ find_package(unitree_go REQUIRED)
 find_package(unitree_api REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 # find_package(rosbag2_cpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
