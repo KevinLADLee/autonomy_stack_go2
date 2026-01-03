@@ -1,0 +1,14 @@
+# Request
+int32[] distance_matrix  # Flattened distance matrix (row-major order)
+int32 matrix_size        # Matrix size N (for NxN matrix)
+int32 depot              # Starting depot index
+bool has_dummy           # Whether dummy node handling is needed
+---
+# Response
+int32[] node_sequence    # Ordered sequence of node indices
+float64 path_length      # Total path length in meters
+bool success             # Whether solving succeeded
+string message           # Status or error message
+
+
+
