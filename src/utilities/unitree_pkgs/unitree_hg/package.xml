@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href=""?>
 <package format="3">
-  <name>unitree_api</name>
+  <name>unitree_hg</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
   <maintainer email="unitree@unitree.com">Unitree</maintainer>
