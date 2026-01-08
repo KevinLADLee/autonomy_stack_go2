@@ -41,9 +41,11 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
 add_executable(vel_ctrl src/vel_ctrl_repub.cpp src/common/ros2_sport_client.cpp)
+add_executable(go2_joint_state_publisher src/go2_joint_state_publisher.cpp)
 add_library(go2_sport_api SHARED src/common/ros2_sport_client.cpp)
 
 ament_target_dependencies(vel_ctrl ${DEPENDENCY_LIST})
+ament_target_dependencies(go2_joint_state_publisher ${DEPENDENCY_LIST})
 ament_target_dependencies(go2_sport_api ${DEPENDENCY_LIST})
 
 install(
@@ -51,7 +53,7 @@ install(
         DESTINATION include
 )
 
-install(TARGETS vel_ctrl
+install(TARGETS vel_ctrl go2_joint_state_publisher
         DESTINATION lib/${PROJECT_NAME})
 
 install(

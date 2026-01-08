@@ -61,9 +61,9 @@
     <param name="pubSkipNum" value="1" />
     <param name="twoWayDrive" value="$(var twoWayDrive)" />
     <param name="lookAheadDis" value="0.5" />
-    <param name="yawRateGain" value="1.5" />
+    <param name="yawRateGain" value="1.2" />
     <param name="stopYawRateGain" value="1.5" />
-    <param name="maxYawRate" value="80.0" />
+    <param name="maxYawRate" value="50.0" />
     <param name="maxSpeed" value="$(var maxSpeed)" />
     <param name="maxAccel" value="1.5" />
     <param name="switchTimeThre" value="1.0" />

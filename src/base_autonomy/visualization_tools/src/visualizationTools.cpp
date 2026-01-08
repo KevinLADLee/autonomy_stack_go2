@@ -16,7 +16,7 @@
 
 #include "tf2/transform_datatypes.h"
 #include "tf2_ros/transform_broadcaster.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #include <pcl/io/ply_io.h>
 #include <pcl/filters/voxel_grid.h>
@@ -37,6 +37,7 @@ const double PI = 3.1415926;
 
 string metricFile;
 string trajFile;
+string pcdFile;
 string mapFile;
 double overallMapVoxelSize = 0.5;
 double exploredAreaVoxelSize = 0.3;
@@ -47,10 +48,13 @@ int overallMapDisplayInterval = 2;
 int overallMapDisplayCount = 0;
 int exploredAreaDisplayInterval = 1;
 int exploredAreaDisplayCount = 0;
+bool saveMetric = false; 
+bool saveTraj = false;
+bool savePcd = false;
 
 pcl::PointCloud<pcl::PointXYZI>::Ptr laserCloud(new pcl::PointCloud<pcl::PointXYZI>());
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr overallMapCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr overallMapCloudDwz(new pcl::PointCloud<pcl::PointXYZRGB>());
+pcl::PointCloud<pcl::PointXYZ>::Ptr overallMapCloud(new pcl::PointCloud<pcl::PointXYZ>());
+pcl::PointCloud<pcl::PointXYZ>::Ptr overallMapCloudDwz(new pcl::PointCloud<pcl::PointXYZ>());
 pcl::PointCloud<pcl::PointXYZI>::Ptr exploredAreaCloud(new pcl::PointCloud<pcl::PointXYZI>());
 pcl::PointCloud<pcl::PointXYZI>::Ptr exploredAreaCloud2(new pcl::PointCloud<pcl::PointXYZI>());
 pcl::PointCloud<pcl::PointXYZI>::Ptr exploredVolumeCloud(new pcl::PointCloud<pcl::PointXYZI>());
@@ -68,7 +72,7 @@ float vehicleYaw = 0;
 float vehicleX = 0, vehicleY = 0, vehicleZ = 0;
 float exploredVolume = 0, travelingDis = 0, runtime = 0, timeDuration = 0;
 
-pcl::VoxelGrid<pcl::PointXYZRGB> overallMapDwzFilter;
+pcl::VoxelGrid<pcl::PointXYZ> overallMapDwzFilter;
 pcl::VoxelGrid<pcl::PointXYZI> exploredAreaDwzFilter;
 pcl::VoxelGrid<pcl::PointXYZI> exploredVolumeDwzFilter;
 
@@ -86,6 +90,7 @@ shared_ptr<rclcpp::Publisher<std_msgs::msg::Float32>> pubTimeDurationPtr;
 
 FILE *metricFilePtr = NULL;
 FILE *trajFilePtr = NULL;
+FILE *pcdFilePtr = NULL;
 
 void odometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odom)
 {
@@ -135,7 +140,10 @@ void odometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odom)
   vehicleY = odom->pose.pose.position.y;
   vehicleZ = odom->pose.pose.position.z;
 
-  fprintf(trajFilePtr, "%f %f %f %f %f %f %f\n", vehicleX, vehicleY, vehicleZ, roll, pitch, yaw, timeDuration);
+  if (saveTraj) {
+    fprintf(trajFilePtr, "%f %f %f %f %f %f %f\n", vehicleX, vehicleY, vehicleZ, roll, pitch, yaw, timeDuration);
+    fflush(trajFilePtr);
+  }
 
   pcl::PointXYZI point;
   point.x = vehicleX;
@@ -167,6 +175,15 @@ void laserCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser
   laserCloud->clear();
   pcl::fromROSMsg(*laserCloudIn, *laserCloud);
 
+  if (savePcd) {
+    float timeDuration2 = rclcpp::Time(laserCloudIn->header.stamp).seconds() - systemInitTime;
+    int laserCloudSize = laserCloud->points.size();
+    for (int i = 0; i < laserCloudSize; i++) {
+      fprintf(pcdFilePtr, "%f %f %f %f %f\n", laserCloud->points[i].x, laserCloud->points[i].y, laserCloud->points[i].z, laserCloud->points[i].intensity, timeDuration2);
+    }
+    fflush(pcdFilePtr);
+  }
+
   *exploredVolumeCloud += *laserCloud;
 
   exploredVolumeCloud2->clear();
@@ -183,7 +200,7 @@ void laserCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser
   *exploredAreaCloud += *laserCloud;
 
   exploredAreaDisplayCount++;
-  if (exploredAreaDisplayCount >= 5 * exploredAreaDisplayInterval) {
+  if (exploredAreaDisplayCount >= 10 * exploredAreaDisplayInterval) {
     exploredAreaCloud2->clear();
     exploredAreaDwzFilter.setInputCloud(exploredAreaCloud);
     exploredAreaDwzFilter.filter(*exploredAreaCloud2);
@@ -201,12 +218,15 @@ void laserCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser
     exploredAreaDisplayCount = 0;
   }
 
-  fprintf(metricFilePtr, "%f %f %f %f\n", exploredVolume, travelingDis, runtime, timeDuration);
+  if (saveMetric) {
+    fprintf(metricFilePtr, "%f %f %f %f\n", exploredVolume, travelingDis, runtime, timeDuration);
+    fflush(metricFilePtr);
+  }
 
   std_msgs::msg::Float32 exploredVolumeMsg;
   exploredVolumeMsg.data = exploredVolume;
   pubExploredVolumePtr->publish(exploredVolumeMsg);
-  
+
   std_msgs::msg::Float32 travelingDisMsg;
   travelingDisMsg.data = travelingDis;
   pubTravelingDisPtr->publish(travelingDisMsg);
@@ -224,6 +244,7 @@ int main(int argc, char** argv)
 
   nh->declare_parameter<std::string>("metricFile", metricFile);
   nh->declare_parameter<std::string>("trajFile", trajFile);
+  nh->declare_parameter<std::string>("pcdFile", pcdFile);
   nh->declare_parameter<std::string>("mapFile", mapFile);
   nh->declare_parameter<double>("overallMapVoxelSize", overallMapVoxelSize);
   nh->declare_parameter<double>("exploredAreaVoxelSize", exploredAreaVoxelSize);
@@ -232,9 +253,13 @@ int main(int argc, char** argv)
   nh->declare_parameter<double>("yawInterval", yawInterval);
   nh->declare_parameter<int>("overallMapDisplayInterval", overallMapDisplayInterval);
   nh->declare_parameter<int>("exploredAreaDisplayInterval", exploredAreaDisplayInterval);
+  nh->declare_parameter<bool>("saveMetric", saveMetric);
+  nh->declare_parameter<bool>("saveTraj", saveTraj);
+  nh->declare_parameter<bool>("savePcd", savePcd);
 
   nh->get_parameter("metricFile", metricFile);
   nh->get_parameter("trajFile", trajFile);
+  nh->get_parameter("pcdFile", pcdFile);
   nh->get_parameter("mapFile", mapFile);
   nh->get_parameter("overallMapVoxelSize", overallMapVoxelSize);
   nh->get_parameter("exploredAreaVoxelSize", exploredAreaVoxelSize);
@@ -243,11 +268,15 @@ int main(int argc, char** argv)
   nh->get_parameter("yawInterval", yawInterval);
   nh->get_parameter("overallMapDisplayInterval", overallMapDisplayInterval);
   nh->get_parameter("exploredAreaDisplayInterval", exploredAreaDisplayInterval);
+  nh->get_parameter("saveMetric", saveMetric);
+  nh->get_parameter("saveTraj", saveTraj);
+  nh->get_parameter("savePcd", savePcd);
 
   // No direct replacement present for $(find pkg) in ROS2. Edit file path.
   mapFile.replace(mapFile.find("/install/"), 8, "/src/base_autonomy");
   metricFile.replace(metricFile.find("/install/"), 8, "/src/base_autonomy");
   trajFile.replace(trajFile.find("/install/"), 8, "/src/base_autonomy");
+  pcdFile.replace(pcdFile.find("/install/"), 8, "/src/base_autonomy");
 
   auto subOdometry = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odometryHandler);
 
@@ -281,6 +310,7 @@ int main(int argc, char** argv)
   overallMapDwzFilter.filter(*overallMapCloudDwz);
   overallMapCloud->clear();
 
+  int overallMapCloudDwzSize = overallMapCloudDwz->points.size();
   pcl::toROSMsg(*overallMapCloudDwz, overallMap2);
 
   time_t logTime = time(0);
@@ -290,8 +320,10 @@ int main(int argc, char** argv)
 
   metricFile += "_" + timeString + ".txt";
   trajFile += "_" + timeString + ".txt";
-  metricFilePtr = fopen(metricFile.c_str(), "w");
-  trajFilePtr = fopen(trajFile.c_str(), "w");
+  pcdFile += "_" + timeString + ".txt";
+  if (saveMetric) metricFilePtr = fopen(metricFile.c_str(), "w");
+  if (saveTraj) trajFilePtr = fopen(trajFile.c_str(), "w");
+  if (savePcd) pcdFilePtr = fopen(pcdFile.c_str(), "w");
 
   rclcpp::Rate rate(100);
   bool status = rclcpp::ok();
@@ -299,9 +331,11 @@ int main(int argc, char** argv)
     rclcpp::spin_some(nh);
     overallMapDisplayCount++;
     if (overallMapDisplayCount >= 100 * overallMapDisplayInterval) {
-      overallMap2.header.stamp = rclcpp::Time(static_cast<uint64_t>(systemTime * 1e9));
-      overallMap2.header.frame_id = "map";
-      pubOverallMap->publish(overallMap2);
+      if (overallMapCloudDwzSize > 0) {
+        overallMap2.header.stamp = rclcpp::Time(static_cast<uint64_t>(systemTime * 1e9));
+        overallMap2.header.frame_id = "map";
+        pubOverallMap->publish(overallMap2);
+      }
 
       overallMapDisplayCount = 0;
     }
@@ -310,8 +344,9 @@ int main(int argc, char** argv)
     rate.sleep();
   }
 
-  fclose(metricFilePtr);
-  fclose(trajFilePtr);
+  if (saveMetric) fclose(metricFilePtr);
+  if (saveTraj) fclose(trajFilePtr);
+  if (savePcd) fclose(pcdFilePtr);
 
   RCLCPP_INFO(nh->get_logger(), "Exploration metrics and vehicle trajectory are saved in 'src/vehicle_simulator/log'.");
 
