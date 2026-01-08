@@ -2,13 +2,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource, FrontendLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.substitutions import LaunchConfiguration 
+from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
-  exploration_planner_config = LaunchConfiguration('exploration_planner_config')
   world_name = LaunchConfiguration('world_name')
   sensorOffsetX = LaunchConfiguration('sensorOffsetX')
   sensorOffsetY = LaunchConfiguration('sensorOffsetY')
@@ -18,22 +17,21 @@ def generate_launch_description():
   checkTerrainConn = LaunchConfiguration('checkTerrainConn')
   vehicleHeight = LaunchConfiguration('vehicleHeight')
 
-  declare_exploration_planner_config = DeclareLaunchArgument('exploration_planner_config', default_value='indoor_small', description='')
   declare_world_name = DeclareLaunchArgument('world_name', default_value='real_world', description='')
-  declare_sensorOffsetX = DeclareLaunchArgument('sensorOffsetX', default_value='0.05', description='')
+  declare_sensorOffsetX = DeclareLaunchArgument('sensorOffsetX', default_value='0.3', description='')
   declare_sensorOffsetY = DeclareLaunchArgument('sensorOffsetY', default_value='0.0', description='')
-  declare_cameraOffsetZ = DeclareLaunchArgument('cameraOffsetZ', default_value='0.25', description='')
+  declare_cameraOffsetZ = DeclareLaunchArgument('cameraOffsetZ', default_value='0.0', description='')
   declare_vehicleX = DeclareLaunchArgument('vehicleX', default_value='0.0', description='')
   declare_vehicleY = DeclareLaunchArgument('vehicleY', default_value='0.0', description='')
   declare_checkTerrainConn = DeclareLaunchArgument('checkTerrainConn', default_value='true', description='')
   declare_vehicleHeight = DeclareLaunchArgument('vehicleHeight', default_value='0.366', description='')
-  
+
+  # <include file="$(find-pkg-share local_planner)/launch/local_planner.launch" >
   start_local_planner = IncludeLaunchDescription(
     FrontendLaunchDescriptionSource(os.path.join(
       get_package_share_directory('local_planner'), 'launch', 'local_planner.launch')
     ),
     launch_arguments={
-      'realRobot': 'true',
       'sensorOffsetX': sensorOffsetX,
       'sensorOffsetY': sensorOffsetY,
       'cameraOffsetZ': cameraOffsetZ,
@@ -42,6 +40,7 @@ def generate_launch_description():
     }.items()
   )
 
+  # <include file="$(find-pkg-share terrain_analysis)/launch/terrain_analysis.launch" />
   start_terrain_analysis = IncludeLaunchDescription(
     FrontendLaunchDescriptionSource(os.path.join(
       get_package_share_directory('terrain_analysis'), 'launch', 'terrain_analysis.launch')
@@ -51,6 +50,7 @@ def generate_launch_description():
     }.items()
   )
 
+  # <include file="$(find-pkg-share terrain_analysis_ext)/launch/terrain_analysis_ext.launch" >
   start_terrain_analysis_ext = IncludeLaunchDescription(
     FrontendLaunchDescriptionSource(os.path.join(
       get_package_share_directory('terrain_analysis_ext'), 'launch', 'terrain_analysis_ext.launch')
@@ -61,54 +61,40 @@ def generate_launch_description():
     }.items()
   )
 
-  start_sensor_scan_generation = IncludeLaunchDescription(
-    FrontendLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('sensor_scan_generation'), 'launch', 'sensor_scan_generation.launch')
+  # <include file="$(find-pkg-share far_planner)/launch/far_planner.launch" />
+  start_far_planner = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('far_planner'), 'launch', 'far_planner.launch')
     )
   )
 
-  start_visualization_tools = IncludeLaunchDescription(
-    FrontendLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('visualization_tools'), 'launch', 'visualization_tools.launch')
-    ),
-    launch_arguments={
-      'world_name': world_name,
-    }.items()
-  )
-
+  # Odin1 driver
   start_odin_ros_driver = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(os.path.join(
       get_package_share_directory('odin_ros_driver'), 'launch', 'odin1_ros2_without_rviz.launch.py')
     )
   )
 
-  start_tare_planner = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(
-      [get_package_share_directory('tare_planner'), '/explore_world.launch']),
-    launch_arguments={
-      'scenario': exploration_planner_config,
-    }.items()
-  )
-
   # Static transform publishers
-  odin_interface_trans_pub_map = Node(
+  # <node pkg="tf2_ros" exec="static_transform_publisher" name="loamInterfaceTransPubMap" args="0 0 0 0 0 0 /map /odom"/>
+  loam_interface_trans_pub_map = Node(
     package='tf2_ros',
     executable='static_transform_publisher',
-    name='odinInterfaceTransPubMap',
+    name='loamInterfaceTransPubMap',
     arguments=['0', '0', '0', '0', '0', '0', '/map', '/odom']
   )
 
-  odin_interface_trans_pub_vehicle = Node(
+  # <node pkg="tf2_ros" exec="static_transform_publisher" name="loamInterfaceTransPubVehicle" args="0 0 0 0 0 0 /odin1_base_link /sensor"/>
+  loam_interface_trans_pub_vehicle = Node(
     package='tf2_ros',
     executable='static_transform_publisher',
-    name='odinInterfaceTransPubVehicle',
+    name='loamInterfaceTransPubVehicle',
     arguments=['0', '0', '0', '0', '0', '0', '/odin1_base_link', '/sensor']
   )
 
   ld = LaunchDescription()
 
-  # Add the actions
-  ld.add_action(declare_exploration_planner_config)
+  # Add the launch arguments
   ld.add_action(declare_world_name)
   ld.add_action(declare_sensorOffsetX)
   ld.add_action(declare_sensorOffsetY)
@@ -118,13 +104,13 @@ def generate_launch_description():
   ld.add_action(declare_checkTerrainConn)
   ld.add_action(declare_vehicleHeight)
 
+  # Add the actions
   ld.add_action(start_local_planner)
   ld.add_action(start_terrain_analysis)
   ld.add_action(start_terrain_analysis_ext)
-  ld.add_action(start_sensor_scan_generation) 
-  # ld.add_action(start_visualization_tools)
-  ld.add_action(start_tare_planner)
-  ld.add_action(odin_interface_trans_pub_map)
-  ld.add_action(odin_interface_trans_pub_vehicle)
+  ld.add_action(start_far_planner)
   ld.add_action(start_odin_ros_driver)
+  ld.add_action(loam_interface_trans_pub_map)
+  ld.add_action(loam_interface_trans_pub_vehicle)
+
   return ld

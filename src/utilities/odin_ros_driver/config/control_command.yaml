@@ -5,7 +5,7 @@ register_keys:
 
   # 0: use odin internal system time as data time stamp as before, typical and recommanded;
   # 1: use host ros time (upon recieve) as data time stamp, only use if you specifically require this setup, not recommanded for most user
-  use_host_ros_time: 0
+  use_host_ros_time: 1
 
   streamctrl: 1           # 0: off; 1: on
 

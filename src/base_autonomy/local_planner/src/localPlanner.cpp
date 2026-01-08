@@ -18,6 +18,7 @@
 
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/polygon_stamped.hpp>
 #include <sensor_msgs/msg/imu.h>
 
@@ -249,6 +250,17 @@ void goalHandler(const geometry_msgs::msg::PointStamped::ConstSharedPtr goal)
 {
   goalX = goal->point.x;
   goalY = goal->point.y;
+  RCLCPP_INFO(nh->get_logger(), "Received way_point: x=%.2f, y=%.2f, frame_id=%s", goalX, goalY, goal->header.frame_id.c_str());
+}
+
+void goalPoseHandler(const geometry_msgs::msg::PoseStamped::ConstSharedPtr goal_pose)
+{
+  // Convert PoseStamped to PointStamped and use the same goalHandler logic
+  // Note: goal_pose should be in "map" frame to match vehicleX/vehicleY from /state_estimation
+  // The frame_id is not checked/transformed, so ensure it matches the /state_estimation frame_id
+  goalX = goal_pose->pose.position.x;
+  goalY = goal_pose->pose.position.y;
+  RCLCPP_INFO(nh->get_logger(), "Received goal_pose: x=%.2f, y=%.2f, frame_id=%s", goalX, goalY, goal_pose->header.frame_id.c_str());
 }
 
 void speedHandler(const std_msgs::msg::Float32::ConstSharedPtr speed)
@@ -592,7 +604,15 @@ int main(int argc, char** argv)
 
   auto subJoystick = nh->create_subscription<sensor_msgs::msg::Joy>("/joy", 5, joystickHandler);
 
+  // Use default QoS for /way_point
   auto subGoal = nh->create_subscription<geometry_msgs::msg::PointStamped> ("/way_point", 5, goalHandler);
+
+  // Subscribe to rviz2 default Goal tool topic for compatibility with foxglove
+  // Use BestEffort QoS with small queue depth to minimize latency for real-time commands
+  rclcpp::QoS goalQoS(1);  // Queue depth of 1 to only keep latest message
+  goalQoS.best_effort();   // Best effort reliability for lower latency
+  goalQoS.durability_volatile();  // Volatile durability (don't keep old messages)
+  auto subGoalPose = nh->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", goalQoS, goalPoseHandler);
 
   auto subSpeed = nh->create_subscription<std_msgs::msg::Float32>("/speed", 5, speedHandler);
 
@@ -650,6 +670,7 @@ int main(int argc, char** argv)
   rclcpp::Rate rate(100);
   bool status = rclcpp::ok();
   while (status) {
+    // Process callbacks first to minimize command latency
     rclcpp::spin_some(nh);
 
     if (newLaserCloud || newTerrainCloud) {
