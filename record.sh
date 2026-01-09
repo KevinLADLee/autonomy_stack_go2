@@ -46,6 +46,7 @@ ros2 bag record -s mcap \
   /odin1/path \
   /overall_map \
   /autonomy_stack/path \
+  /autonomy_stack/free_paths \
   /registered_scan \
   /robot_description \
   /speed \

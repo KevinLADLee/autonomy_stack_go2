@@ -916,6 +916,10 @@ int main(int argc, char** argv)
               break;
             }
           }
+          // Ensure all remaining poses have frame_id set
+          for (size_t i = 0; i < path.poses.size(); i++) {
+            path.poses[i].header.frame_id = "vehicle";
+          }
 
           path.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
           path.header.frame_id = "vehicle";
@@ -985,6 +989,7 @@ int main(int argc, char** argv)
 
       if (!pathFound) {
         path.poses.resize(1);
+        path.poses[0].header.frame_id = "vehicle";
         path.poses[0].pose.position.x = 0;
         path.poses[0].pose.position.y = 0;
         path.poses[0].pose.position.z = 0;
