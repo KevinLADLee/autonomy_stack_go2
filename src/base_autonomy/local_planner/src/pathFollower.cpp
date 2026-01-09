@@ -3,13 +3,13 @@
 #include <stdlib.h>
 #include <chrono>
 
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp/time.hpp"
-#include "rclcpp/clock.hpp"
-#include "builtin_interfaces/msg/time.hpp"
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/time.hpp>
+#include <rclcpp/clock.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 
-#include "nav_msgs/msg/odometry.hpp"
-#include "sensor_msgs/msg/point_cloud2.hpp"
+#include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
@@ -18,9 +18,9 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <sensor_msgs/msg/imu.h>
 
-#include "tf2/transform_datatypes.h"
-#include "tf2_ros/transform_broadcaster.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include <tf2/transform_datatypes.hpp>
+#include <tf2_ros/transform_broadcaster.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -28,13 +28,10 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include "message_filters/subscriber.h"
-#include "message_filters/synchronizer.h"
-#include "message_filters/sync_policies/approximate_time.h"
-#include "rmw/types.h"
-#include "rmw/qos_profiles.h"
+#include <message_filters/subscriber.hpp>
+#include <message_filters/synchronizer.hpp>
+#include <message_filters/sync_policies/approximate_time.hpp>
 
-// Go2 command forwarding is now handled by vel_ctrl_repub node
 
 using namespace std;
 
@@ -277,7 +274,7 @@ int main(int argc, char** argv)
 
   auto subOdom = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odomHandler);
 
-  auto subPath = nh->create_subscription<nav_msgs::msg::Path>("/path", 5, pathHandler);
+  auto subPath = nh->create_subscription<nav_msgs::msg::Path>("/autonomy_stack/path", 5, pathHandler);
 
   auto subJoystick = nh->create_subscription<sensor_msgs::msg::Joy>("/joy", 5, joystickHandler);
 
