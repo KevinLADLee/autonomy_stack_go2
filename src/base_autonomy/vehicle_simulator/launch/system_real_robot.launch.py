@@ -70,14 +70,22 @@ def generate_launch_description():
     package='tf2_ros',
     executable='static_transform_publisher',
     name='loamInterfaceTransPubMap',
-    arguments=['0', '0', '0', '0', '0', '0', '/map', '/odom']
+    arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom']
   )
 
   loam_interface_trans_pub_vehicle = Node(
     package='tf2_ros',
     executable='static_transform_publisher',
     name='loamInterfaceTransPubVehicle',
-    arguments=['0', '0', '0', '0', '0', '0', '/odin1_base_link', '/sensor']
+    arguments=['0', '0', '0', '0', '0', '0', 'odin1_base_link', 'sensor']
+  )
+
+  # Static transform: vehicle -> base (sensor -> vehicle is published by local_planner.launch)
+  vehicle_to_go2_base = Node(
+    package='tf2_ros',
+    executable='static_transform_publisher',
+    name='vehicle_to_go2_base',
+    arguments=['-0.3', '0', '0', '0', '0', '0', 'sensor', 'base']
   )
 
   start_go2_sport_api = IncludeLaunchDescription(
@@ -111,13 +119,7 @@ def generate_launch_description():
     parameters=[robot_description_with_freq]
   )
   
-  # Static transform: vehicle -> base (sensor -> vehicle is published by local_planner.launch)
-  vehicle_to_go2_base = Node(
-    package='tf2_ros',
-    executable='static_transform_publisher',
-    name='vehicle_to_go2_base',
-    arguments=['0', '0', '0', '0', '0', '0', 'vehicle', 'base']
-  )
+
 
   # Foxglove bridge with topic filtering to reduce data transfer
   # Only forward essential topics for visualization and control
@@ -163,6 +165,7 @@ def generate_launch_description():
         '/tf_static',
         '/way_point',
         '/wirelesscontroller',
+        '/lf/battery_alarm'
       ],
       'capabilities': ['topics', 'services', 'parameters'],
       'port': 8765,
