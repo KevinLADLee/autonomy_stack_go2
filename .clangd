@@ -1,0 +1,26 @@
+# clangd configuration
+# clangd will automatically use compile_commands.json if present
+# This configuration provides fallback paths for standard library headers
+
+CompileFlags:
+  # Use g++ as the compiler to match the build system
+  Compiler: g++
+  # Add standard C++ library paths (g++ includes these automatically, but clangd needs them explicitly)
+  Add:
+    - "-I/usr/include/c++/11"
+    - "-I/usr/include/x86_64-linux-gnu/c++/11"
+    - "-I/usr/include/c++/11/backward"
+    - "-I/usr/lib/gcc/x86_64-linux-gnu/11/include"
+    - "-I/usr/local/include"
+    - "-I/usr/include/x86_64-linux-gnu"
+    - "-I/usr/include"
+  # Remove warning flags to reduce noise
+  Remove: [-W*]
+
+Diagnostics:
+  UnusedIncludes: Strict
+  # Suppress some common false positives
+  Suppress: [unused-includes]
+
+Index:
+  Background: Build
