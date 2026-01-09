@@ -80,6 +80,12 @@ def generate_launch_description():
     arguments=['0', '0', '0', '0', '0', '0', '/odin1_base_link', '/sensor']
   )
 
+  start_go2_sport_api = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('go2_sport_api'), 'launch', 'go2_sport_api.launch.py')
+    )
+  )
+
   # Go2 robot description and visualization
   go2_description_pkg = get_package_share_directory('go2_description')
   go2_xacro_path = os.path.join(go2_description_pkg, 'xacro', 'robot.xacro')
@@ -122,31 +128,41 @@ def generate_launch_description():
     parameters=[{
       # Topic whitelist - only forward these topics
       'topic_whitelist': [
-        # State and localization
-        '/state_estimation',
-        '/odom',
-        # Point clouds (essential for visualization)
-        '/registered_scan',
-        '/terrain_map',
-        # Planning and navigation
-        '/path',
-        '/way_point',
-        '/goal_pose',
+        '/added_obstacles',
+        '/api/sport/request',
+        '/check_obstacle',
+        '/cmd_vel',
         '/free_paths',
-        # TF transforms
+        '/goal_pose',
+        '/joint_states',
+        '/joy',
+        '/lowstate',
+        '/map_clearing',
+        '/navigation_boundary',
+        '/odin/cloud_raw',
+        '/odin1/camera_pose_visual',
+        '/odin1/cloud_render',
+        '/odin1/image',
+        '/odin1/image/compressed',
+        '/odin1/image/intensity_gray',
+        '/odin1/image/undistorted',
+        '/odin1/imu',
+        '/odin1/odometry_highfreq',
+        '/odin1/path',
+        '/overall_map',
+        '/parameter_events',
+        '/path',
+        '/registered_scan',
+        '/robot_description',
+        '/rosout',
+        '/speed',
+        '/state_estimation',
+        '/stop',
+        '/terrain_map',
         '/tf',
         '/tf_static',
-        # Robot state
-        '/joint_states',
-        '/robot_description',
-        # Optional: uncomment if needed
-        # '/added_obstacles',
-        '/terrain_map_ext',
-        '/terrain_map',
-        '/odin1/path',
-        '/odin1/odometry_highfreq',
-        '/odin1/image/compressed',
-        '/odin1/cloud_slam'
+        '/way_point',
+        '/wirelesscontroller',
       ],
       'capabilities': ['topics', 'services', 'parameters'],
       'port': 8765,
@@ -170,6 +186,7 @@ def generate_launch_description():
   ld.add_action(start_local_planner)
   ld.add_action(start_terrain_analysis)
   ld.add_action(start_odin_ros_driver)
+  ld.add_action(start_go2_sport_api)
   ld.add_action(rviz_node)
   ld.add_action(loam_interface_trans_pub_map)
   ld.add_action(loam_interface_trans_pub_vehicle)
