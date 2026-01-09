@@ -38,37 +38,23 @@ echo "=========================================="
 # 使用 MCAP 格式录制，包含所有关键 topics
 ros2 bag record -s mcap \
   -o "$OUTPUT_DIR/$BAG_NAME" \
-  /added_obstacles \
-  /api/sport/request \
-  /check_obstacle \
   /cmd_vel \
-  /autonomy_stack/free_paths \
   /goal_pose \
   /joint_states \
-  /lowstate \
-  /map_clearing \
-  /navigation_boundary \
-  /odin/cloud_raw \
-  /odin1/camera_pose_visual \
   /odin1/cloud_render \
-  /odin1/image \
   /odin1/image/compressed \
-  /odin1/imu \
-  /odin1/odometry_highfreq \
   /odin1/path \
   /overall_map \
   /autonomy_stack/path \
   /registered_scan \
   /robot_description \
-  /rosout \
   /speed \
   /state_estimation \
   /stop \
   /terrain_map \
   /tf \
   /tf_static \
-  /way_point \
-  /wirelesscontroller
+  /way_point 
 
 echo ""
 echo "=========================================="
