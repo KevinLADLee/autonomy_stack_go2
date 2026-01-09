@@ -1483,10 +1483,10 @@ private:
 
             imu_pub_ = node_->create_publisher<ros::Imu>("odin1/imu", qos_profile);
             rgb_pub_ = node_->create_publisher<ros::Image>("odin1/image", qos_profile);
-            cloud_pub_ = node_->create_publisher<ros::PointCloud2>("odin/cloud_raw", qos_profile);
+            cloud_pub_ = node_->create_publisher<ros::PointCloud2>("odin1/cloud_raw", qos_profile);
             xyzrgbacloud_pub_ = node_->create_publisher<ros::PointCloud2>("registered_scan", qos_profile);
-            odom_publisher_ = node_->create_publisher<ros::Odometry>("state_estimation", qos_profile);
-            odom_highfreq_publisher_ = node_->create_publisher<ros::Odometry>("odin1/odometry_highfreq", qos_profile);
+            odom_publisher_ = node_->create_publisher<ros::Odometry>("/odin1/odometry", qos_profile);
+            odom_highfreq_publisher_ = node_->create_publisher<ros::Odometry>("state_estimation", qos_profile);
             path_publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("odin1/path", qos_profile);
             pub_camera_pose_visual_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("odin1/camera_pose_visual", qos_profile);
             rgbcloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("odin1/cloud_render", qos_profile);
