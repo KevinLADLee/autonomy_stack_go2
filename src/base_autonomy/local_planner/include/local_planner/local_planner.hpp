@@ -11,9 +11,7 @@
 // ROS2 消息类型
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/joy.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
@@ -86,8 +84,6 @@ struct PlannerConfig
   // 自主模式
   bool autonomyMode = false;
   double autonomySpeed = 1.0;
-  double joyToSpeedDelay = 2.0;
-  double joyToCheckObstacleDelay = 5.0;
   double goalCloseDis = 1.0;
   double goalClearRange = 0.5;
   double goalX = 0.0;
@@ -112,12 +108,11 @@ struct VehicleState
 
   // 时间戳
   double odomTime = 0.0;
-  double joyTime = 0.0;
 
-  // 控制输入
-  float joySpeed = 0.0f;
-  float joySpeedRaw = 0.0f;
-  float joyDir = 0.0f;
+  // 自主控制状态
+  float normalizedSpeed = 0.0f;      // 归一化速度 [0, 1]
+  float targetDirection = 0.0f;      // 目标方向（度数，-180 到 180）
+  bool hasValidGoal = false;         // 是否有有效目标
 };
 
 // 点云容器 - 全部使用 shared_ptr
@@ -225,14 +220,11 @@ struct PathData
   PathData(PathData&&) = default;
   PathData& operator=(PathData&&) = default;
 
-  // 文件读取方法
+  // 文件读取方法（委托给 io 命名空间的函数）
   bool readStartPaths(const std::string& pathFolder);
   bool readPaths(const std::string& pathFolder);
   bool readPathList(const std::string& pathFolder);
   bool readCorrespondences(const std::string& pathFolder);
-
-private:
-  int readPlyHeader(std::ifstream& file);
 };
 
 // 主 LocalPlanner 类
@@ -259,9 +251,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odometry_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_laser_cloud_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_terrain_cloud_;
-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_joystick_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_goal_pose_;
-  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
   rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr sub_boundary_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_added_obstacles_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_check_obstacle_;
@@ -280,7 +270,6 @@ private:
   void loadParameters();
   void initializeSubscribers();
   void initializePublishers();
-  void initializeTimer();
   void initializeFilters();
   bool loadPathFiles();
 
@@ -288,9 +277,7 @@ private:
   void odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
   void laserCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void terrainCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
-  void joystickCallback(const sensor_msgs::msg::Joy::SharedPtr msg);
   void goalPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-  void speedCallback(const std_msgs::msg::Float32::SharedPtr msg);
   void boundaryCallback(const geometry_msgs::msg::PolygonStamped::SharedPtr msg);
   void addedObstaclesCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void checkObstacleCallback(const std_msgs::msg::Bool::SharedPtr msg);
@@ -301,17 +288,27 @@ private:
   // 核心处理方法
   void processPointClouds();
   void transformAndCropClouds();
+  void transformPointCloudToVehicleFrame(
+    const pcl::PointCloud<pcl::PointXYZI>::Ptr& inputCloud,
+    const pcl::PointCloud<pcl::PointXYZI>::Ptr& outputCloud,
+    bool checkRangeAndZ = true,
+    bool clearOutput = true
+  ) const;
   bool findPath(nav_msgs::msg::Path& path);
   void publishPath(const nav_msgs::msg::Path& path);
   void publishFreePaths();
 
   // 辅助方法
-  void updateJoystickSpeed();
   void updatePathScaleAndRange(float& pathScale, float& pathRange);
+
+  // 目标更新方法
+  void updateTargetFromGoal();
 
   // 角度和方向工具方法
   float computeAngleDifference(float angle1, float angle2) const;
   float normalizeAngle(float angle) const;
+  bool isDirectionValid(int rotDir) const;
+  bool isRotationValid(float rotAng, float rotDeg, float minObsAngCW, float minObsAngCCW) const;
 
   // 目标计算
   void calculateRelativeGoal(
@@ -333,7 +330,6 @@ private:
   );
 
   // 路径评分
-  float scorePath(int pathIndex, int rotDir, float desiredDir, float relativeGoalDis) const;
   void scoreAllPaths(float desiredDir, float relativeGoalDis);
 
   // 路径选择
