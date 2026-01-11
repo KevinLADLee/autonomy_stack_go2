@@ -1,7 +1,7 @@
-#include <math.h>
-#include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cmath>
+#include <ctime>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <iostream>
 #include "rclcpp/rclcpp.hpp"
@@ -40,11 +40,11 @@
 
 using namespace std;
 
-const double PI = 3.1415926;
+constexpr double PI = 3.14159265358979323846;
 
 #define PLOTPATHSET 1
 
-string pathFolder;
+std::string pathFolder;
 double vehicleLength = 0.6;
 double vehicleWidth = 0.6;
 double sensorOffsetX = 0;
@@ -61,7 +61,7 @@ double groundHeightThre = 0.1;
 double costHeightThre = 0.1;
 double costScore = 0.02;
 bool useCost = false;
-const int laserCloudStackNum = 1;
+constexpr int laserCloudStackNum = 1;
 int laserCloudCount = 0;
 int pointPerPathThre = 2;
 double minRelZ = -0.5;
@@ -91,15 +91,15 @@ float joySpeed = 0;
 float joySpeedRaw = 0;
 float joyDir = 0;
 
-const int pathNum = 343;
-const int groupNum = 7;
+constexpr int pathNum = 343;
+constexpr int groupNum = 7;
 float gridVoxelSize = 0.02;
 float searchRadius = 0.55;
 float gridVoxelOffsetX = 3.2;
 float gridVoxelOffsetY = 4.5;
-const int gridVoxelNumX = 161;
-const int gridVoxelNumY = 451;
-const int gridVoxelNum = gridVoxelNumX * gridVoxelNumY;
+constexpr int gridVoxelNumX = 161;
+constexpr int gridVoxelNumY = 451;
+constexpr int gridVoxelNum = gridVoxelNumX * gridVoxelNumY;
 
 pcl::PointCloud<pcl::PointXYZI>::Ptr laserCloud(new pcl::PointCloud<pcl::PointXYZI>());
 pcl::PointCloud<pcl::PointXYZI>::Ptr laserCloudCrop(new pcl::PointCloud<pcl::PointXYZI>());
@@ -118,12 +118,12 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr paths[pathNum];
 pcl::PointCloud<pcl::PointXYZI>::Ptr freePaths(new pcl::PointCloud<pcl::PointXYZI>());
 #endif
 
-int pathList[pathNum] = {0};
-float endDirPathList[pathNum] = {0};
-int clearPathList[36 * pathNum] = {0};
-float pathPenaltyList[36 * pathNum] = {0};
-float clearPathPerGroupScore[36 * groupNum] = {0};
-std::vector<int> correspondences[gridVoxelNum];
+std::vector<int> pathList(pathNum, 0);
+std::vector<float> endDirPathList(pathNum, 0);
+std::vector<int> clearPathList(36 * pathNum, 0);
+std::vector<float> pathPenaltyList(36 * pathNum, 0);
+std::vector<float> clearPathPerGroupScore(36 * groupNum, 0);
+std::vector<std::vector<int>> correspondences(gridVoxelNum);
 
 bool newLaserCloud = false;
 bool newTerrainCloud = false;
@@ -168,7 +168,7 @@ void laserCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser
       float pointY = point.y;
       float pointZ = point.z;
 
-      float dis = sqrt((pointX - vehicleX) * (pointX - vehicleX) + (pointY - vehicleY) * (pointY - vehicleY));
+      float dis = std::hypot(pointX - vehicleX, pointY - vehicleY);
       if (dis < adjacentRange) {
         point.x = pointX;
         point.y = pointY;
@@ -201,7 +201,7 @@ void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr ter
       float pointY = point.y;
       float pointZ = point.z;
 
-      float dis = sqrt((pointX - vehicleX) * (pointX - vehicleX) + (pointY - vehicleY) * (pointY - vehicleY));
+      float dis = std::hypot(pointX - vehicleX, pointY - vehicleY);
       if (dis < adjacentRange && (point.intensity > obstacleHeightThre || useCost)) {
         point.x = pointX;
         point.y = pointY;
@@ -221,7 +221,7 @@ void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr ter
 void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)
 {
   joyTime = nh->now().seconds();
-  joySpeedRaw = sqrt(joy->axes[3] * joy->axes[3] + joy->axes[4] * joy->axes[4]);
+  joySpeedRaw = std::hypot(joy->axes[3], joy->axes[4]);
   joySpeed = joySpeedRaw;
   if (joySpeed > 1.0) joySpeed = 1.0;
   if (joy->axes[4] == 0) joySpeed = 0;
@@ -293,7 +293,7 @@ void boundaryHandler(const geometry_msgs::msg::PolygonStamped::ConstSharedPtr bo
     if (point1.z == point2.z) {
       float disX = point1.x - point2.x;
       float disY = point1.y - point2.y;
-      float dis = sqrt(disX * disX + disY * disY);
+      float dis = std::hypot(disX, disY);
 
       int pointNum = int(dis / terrainVoxelSize) + 1;
       for (int pointID = 0; pointID < pointNum; pointID++) {
@@ -329,28 +329,23 @@ void checkObstacleHandler(const std_msgs::msg::Bool::ConstSharedPtr checkObs)
   }
 }
 
-int readPlyHeader(FILE *filePtr)
+int readPlyHeader(std::ifstream& file)
 {
-  char str[50];
-  int val, pointNum;
-  string strCur, strLast;
+  std::string strCur, strLast;
+  int pointNum = 0;
   while (strCur != "end_header") {
-    val = fscanf(filePtr, "%s", str);
-    if (val != 1) {
+    if (!(file >> strCur)) {
       RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
       exit(1);
     }
 
-    strLast = strCur;
-    strCur = string(str);
-
     if (strCur == "vertex" && strLast == "element") {
-      val = fscanf(filePtr, "%d", &pointNum);
-      if (val != 1) {
+      if (!(file >> pointNum)) {
         RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
         exit(1);
       }
     }
+    strLast = strCur;
   }
 
   return pointNum;
@@ -358,27 +353,22 @@ int readPlyHeader(FILE *filePtr)
 
 void readStartPaths()
 {
-  string fileName = pathFolder + "/startPaths.ply";
+  std::string fileName = pathFolder + "/startPaths.ply";
 
-  FILE *filePtr = fopen(fileName.c_str(), "r");
-  if (filePtr == NULL) {
+  std::ifstream file(fileName);
+  if (!file.is_open()) {
     RCLCPP_INFO(nh->get_logger(), "Cannot read input files, exit.");
     exit(1);
   }
 
-  int pointNum = readPlyHeader(filePtr);
+  int pointNum = readPlyHeader(file);
 
   pcl::PointXYZ point;
-  int val1, val2, val3, val4, groupID;
+  int groupID;
   for (int i = 0; i < pointNum; i++) {
-    val1 = fscanf(filePtr, "%f", &point.x);
-    val2 = fscanf(filePtr, "%f", &point.y);
-    val3 = fscanf(filePtr, "%f", &point.z);
-    val4 = fscanf(filePtr, "%d", &groupID);
-
-    if (val1 != 1 || val2 != 1 || val3 != 1 || val4 != 1) {
+    if (!(file >> point.x >> point.y >> point.z >> groupID)) {
       RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-        exit(1);
+      exit(1);
     }
 
     if (groupID >= 0 && groupID < groupNum) {
@@ -386,36 +376,30 @@ void readStartPaths()
     }
   }
 
-  fclose(filePtr);
+  file.close();
 }
 
 #if PLOTPATHSET == 1
 void readPaths()
 {
-  string fileName = pathFolder + "/paths.ply";
+  std::string fileName = pathFolder + "/paths.ply";
 
-  FILE *filePtr = fopen(fileName.c_str(), "r");
-  if (filePtr == NULL) {
+  std::ifstream file(fileName);
+  if (!file.is_open()) {
     RCLCPP_INFO(nh->get_logger(), "Cannot read input files, exit.");
     exit(1);
   }
 
-  int pointNum = readPlyHeader(filePtr);
+  int pointNum = readPlyHeader(file);
 
   pcl::PointXYZI point;
   int pointSkipNum = 30;
   int pointSkipCount = 0;
-  int val1, val2, val3, val4, val5, pathID;
+  int pathID;
   for (int i = 0; i < pointNum; i++) {
-    val1 = fscanf(filePtr, "%f", &point.x);
-    val2 = fscanf(filePtr, "%f", &point.y);
-    val3 = fscanf(filePtr, "%f", &point.z);
-    val4 = fscanf(filePtr, "%d", &pathID);
-    val5 = fscanf(filePtr, "%f", &point.intensity);
-
-    if (val1 != 1 || val2 != 1 || val3 != 1 || val4 != 1 || val5 != 1) {
+    if (!(file >> point.x >> point.y >> point.z >> pathID >> point.intensity)) {
       RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-        exit(1);
+      exit(1);
     }
 
     if (pathID >= 0 && pathID < pathNum) {
@@ -427,37 +411,31 @@ void readPaths()
     }
   }
 
-  fclose(filePtr);
+  file.close();
 }
 #endif
 
 void readPathList()
 {
-  string fileName = pathFolder + "/pathList.ply";
+  std::string fileName = pathFolder + "/pathList.ply";
 
-  FILE *filePtr = fopen(fileName.c_str(), "r");
-  if (filePtr == NULL) {
+  std::ifstream file(fileName);
+  if (!file.is_open()) {
     RCLCPP_INFO(nh->get_logger(), "Cannot read input files, exit.");
     exit(1);
   }
 
-  if (pathNum != readPlyHeader(filePtr)) {
+  if (pathNum != readPlyHeader(file)) {
     RCLCPP_INFO(nh->get_logger(), "Incorrect path number, exit.");
     exit(1);
   }
 
-  int val1, val2, val3, val4, val5, pathID, groupID;
+  int pathID, groupID;
   float endX, endY, endZ;
   for (int i = 0; i < pathNum; i++) {
-    val1 = fscanf(filePtr, "%f", &endX);
-    val2 = fscanf(filePtr, "%f", &endY);
-    val3 = fscanf(filePtr, "%f", &endZ);
-    val4 = fscanf(filePtr, "%d", &pathID);
-    val5 = fscanf(filePtr, "%d", &groupID);
-
-    if (val1 != 1 || val2 != 1 || val3 != 1 || val4 != 1 || val5 != 1) {
+    if (!(file >> endX >> endY >> endZ >> pathID >> groupID)) {
       RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-        exit(1);
+      exit(1);
     }
 
     if (pathID >= 0 && pathID < pathNum && groupID >= 0 && groupID < groupNum) {
@@ -466,32 +444,30 @@ void readPathList()
     }
   }
 
-  fclose(filePtr);
+  file.close();
 }
 
 void readCorrespondences()
 {
-  string fileName = pathFolder + "/correspondences.txt";
+  std::string fileName = pathFolder + "/correspondences.txt";
 
-  FILE *filePtr = fopen(fileName.c_str(), "r");
-  if (filePtr == NULL) {
+  std::ifstream file(fileName);
+  if (!file.is_open()) {
     RCLCPP_INFO(nh->get_logger(), "Cannot read input files, exit.");
     exit(1);
   }
 
-  int val1, gridVoxelID, pathID;
+  int gridVoxelID, pathID;
   for (int i = 0; i < gridVoxelNum; i++) {
-    val1 = fscanf(filePtr, "%d", &gridVoxelID);
-    if (val1 != 1) {
+    if (!(file >> gridVoxelID)) {
       RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-        exit(1);
+      exit(1);
     }
 
-    while (1) {
-      val1 = fscanf(filePtr, "%d", &pathID);
-      if (val1 != 1) {
+    while (true) {
+      if (!(file >> pathID)) {
         RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-          exit(1);
+        exit(1);
       }
 
       if (pathID != -1) {
@@ -504,7 +480,7 @@ void readCorrespondences()
     }
   }
 
-  fclose(filePtr);
+  file.close();
 }
 
 int main(int argc, char** argv)
@@ -705,7 +681,7 @@ int main(int argc, char** argv)
         point.z = pointZ1;
         point.intensity = plannerCloud->points[i].intensity;
 
-        float dis = sqrt(point.x * point.x + point.y * point.y);
+        float dis = std::hypot(point.x, point.y);
         if (dis < adjacentRange && ((point.z > minRelZ && point.z < maxRelZ) || useTerrainAnalysis)) {
           plannerCloudCrop->push_back(point);
         }
@@ -720,7 +696,7 @@ int main(int argc, char** argv)
         point.z = boundaryCloud->points[i].z;
         point.intensity = boundaryCloud->points[i].intensity;
 
-        float dis = sqrt(point.x * point.x + point.y * point.y);
+        float dis = std::hypot(point.x, point.y);
         if (dis < adjacentRange) {
           plannerCloudCrop->push_back(point);
         }
@@ -735,7 +711,7 @@ int main(int argc, char** argv)
         point.z = addedObstacles->points[i].z;
         point.intensity = addedObstacles->points[i].intensity;
 
-        float dis = sqrt(point.x * point.x + point.y * point.y);
+        float dis = std::hypot(point.x, point.y);
         if (dis < adjacentRange) {
           plannerCloudCrop->push_back(point);
         }
@@ -750,7 +726,7 @@ int main(int argc, char** argv)
         float relativeGoalX = ((goalX - vehicleX) * cosVehicleYaw + (goalY - vehicleY) * sinVehicleYaw);
         float relativeGoalY = (-(goalX - vehicleX) * sinVehicleYaw + (goalY - vehicleY) * cosVehicleYaw);
 
-        relativeGoalDis = sqrt(relativeGoalX * relativeGoalX + relativeGoalY * relativeGoalY);
+        relativeGoalDis = std::hypot(relativeGoalX, relativeGoalY);
         joyDir = atan2(relativeGoalY, relativeGoalX) * 180 / PI;
 
         if (!twoWayDrive) {
@@ -775,14 +751,14 @@ int main(int argc, char** argv)
 
         float minObsAngCW = -180.0;
         float minObsAngCCW = 180.0;
-        float diameter = sqrt(vehicleLength / 2.0 * vehicleLength / 2.0 + vehicleWidth / 2.0 * vehicleWidth / 2.0);
+        float diameter = std::hypot(vehicleLength / 2.0, vehicleWidth / 2.0);
         float angOffset = atan2(vehicleWidth, vehicleLength) * 180.0 / PI;
         int plannerCloudCropSize = plannerCloudCrop->points.size();
         for (int i = 0; i < plannerCloudCropSize; i++) {
           float x = plannerCloudCrop->points[i].x / pathScale;
           float y = plannerCloudCrop->points[i].y / pathScale;
           float h = plannerCloudCrop->points[i].intensity;
-          float dis = sqrt(x * x + y * y);
+          float dis = std::hypot(x, y);
 
           if (dis < pathRange / pathScale && (dis <= (relativeGoalDis + goalClearRange) / pathScale || !pathCropByGoal) && checkObstacle) {
             for (int rotDir = 0; rotDir < 36; rotDir++) {
@@ -896,7 +872,7 @@ int main(int argc, char** argv)
             float x = startPaths[selectedGroupID]->points[i].x;
             float y = startPaths[selectedGroupID]->points[i].y;
             float z = startPaths[selectedGroupID]->points[i].z;
-            float dis = sqrt(x * x + y * y);
+            float dis = std::hypot(x, y);
 
             if (dis <= pathRange / pathScale && dis <= relativeGoalDis / pathScale) {
               path.poses[i].pose.position.x = pathScale * (cos(rotAng) * x - sin(rotAng) * y);
@@ -943,7 +919,7 @@ int main(int argc, char** argv)
                 float y = point.y;
                 float z = point.z;
 
-                float dis = sqrt(x * x + y * y);
+                float dis = std::hypot(x, y);
                 if (dis <= pathRange / pathScale && (dis <= (relativeGoalDis + goalClearRange) / pathScale || !pathCropByGoal)) {
                   point.x = pathScale * (cos(rotAng) * x - sin(rotAng) * y);
                   point.y = pathScale * (sin(rotAng) * x + cos(rotAng) * y);
