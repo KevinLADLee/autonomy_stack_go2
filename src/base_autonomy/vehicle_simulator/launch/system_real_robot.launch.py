@@ -163,7 +163,6 @@ def generate_launch_description():
         '/terrain_map',
         '/tf',
         '/tf_static',
-        '/way_point',
         '/wirelesscontroller',
         '/lf/battery_alarm'
       ],
