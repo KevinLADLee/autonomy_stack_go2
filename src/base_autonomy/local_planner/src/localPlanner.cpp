@@ -24,7 +24,7 @@
 
 #include "tf2/transform_datatypes.h"
 #include "tf2_ros/transform_broadcaster.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -246,18 +246,15 @@ void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)
   }
 }
 
-void goalHandler(const geometry_msgs::msg::PointStamped::ConstSharedPtr goal)
-{
-  goalX = goal->point.x;
-  goalY = goal->point.y;
-  RCLCPP_INFO(nh->get_logger(), "Received way_point: x=%.2f, y=%.2f, frame_id=%s", goalX, goalY, goal->header.frame_id.c_str());
-}
+// void goalHandler(const geometry_msgs::msg::PointStamped::ConstSharedPtr goal)
+// {
+//   goalX = goal->point.x;
+//   goalY = goal->point.y;
+//   RCLCPP_INFO(nh->get_logger(), "Received way_point: x=%.2f, y=%.2f, frame_id=%s", goalX, goalY, goal->header.frame_id.c_str());
+// }
 
 void goalPoseHandler(const geometry_msgs::msg::PoseStamped::ConstSharedPtr goal_pose)
 {
-  // Convert PoseStamped to PointStamped and use the same goalHandler logic
-  // Note: goal_pose should be in "map" frame to match vehicleX/vehicleY from /state_estimation
-  // The frame_id is not checked/transformed, so ensure it matches the /state_estimation frame_id
   goalX = goal_pose->pose.position.x;
   goalY = goal_pose->pose.position.y;
   RCLCPP_INFO(nh->get_logger(), "Received goal_pose: x=%.2f, y=%.2f, frame_id=%s", goalX, goalY, goal_pose->header.frame_id.c_str());
@@ -604,15 +601,9 @@ int main(int argc, char** argv)
 
   auto subJoystick = nh->create_subscription<sensor_msgs::msg::Joy>("/joy", 5, joystickHandler);
 
-  // Use default QoS for /way_point
-  auto subGoal = nh->create_subscription<geometry_msgs::msg::PointStamped> ("/way_point", 5, goalHandler);
+  // auto subGoal = nh->create_subscription<geometry_msgs::msg::PointStamped> ("/way_point", 5, goalHandler);
 
-  // Subscribe to rviz2 default Goal tool topic for compatibility with foxglove
-  // Use BestEffort QoS with small queue depth to minimize latency for real-time commands
-  rclcpp::QoS goalQoS(1);  // Queue depth of 1 to only keep latest message
-  goalQoS.best_effort();   // Best effort reliability for lower latency
-  goalQoS.durability_volatile();  // Volatile durability (don't keep old messages)
-  auto subGoalPose = nh->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", goalQoS, goalPoseHandler);
+  auto subGoalPose = nh->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 1, goalPoseHandler);
 
   auto subSpeed = nh->create_subscription<std_msgs::msg::Float32>("/speed", 5, speedHandler);
 
@@ -694,10 +685,10 @@ int main(int argc, char** argv)
         *plannerCloud = *terrainCloudDwz;
       }
 
-      float sinVehicleRoll = sin(vehicleRoll);
-      float cosVehicleRoll = cos(vehicleRoll);
-      float sinVehiclePitch = sin(vehiclePitch);
-      float cosVehiclePitch = cos(vehiclePitch);
+      // float sinVehicleRoll = sin(vehicleRoll);
+      // float cosVehicleRoll = cos(vehicleRoll);
+      // float sinVehiclePitch = sin(vehiclePitch);
+      // float cosVehiclePitch = cos(vehiclePitch);
       float sinVehicleYaw = sin(vehicleYaw);
       float cosVehicleYaw = cos(vehicleYaw);
 
