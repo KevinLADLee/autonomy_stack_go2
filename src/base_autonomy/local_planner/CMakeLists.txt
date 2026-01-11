@@ -32,15 +32,20 @@ find_package(pcl_ros REQUIRED)
 find_package(unitree_api REQUIRED)
 find_package(go2_sport_api REQUIRED)
 
-add_executable(localPlanner src/localPlanner.cpp)
+# Original executables (kept for reference)
+# add_executable(localPlanner src/localPlanner.cpp)
 add_executable(pathFollower src/pathFollower.cpp)
+
+# New modernized executable using OOP architecture
+add_executable(local_planner_node src/local_planner.cpp)
 
 # target_include_directories(pathFollower PUBLIC
 #   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
 #   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
 
-ament_target_dependencies(localPlanner rclcpp std_msgs sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs message_filters pcl_ros pcl_conversions)
+# ament_target_dependencies(localPlanner rclcpp std_msgs sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs message_filters pcl_ros pcl_conversions)
 ament_target_dependencies(pathFollower rclcpp std_msgs sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs message_filters pcl_ros pcl_conversions go2_sport_api unitree_api)
+ament_target_dependencies(local_planner_node rclcpp std_msgs sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs message_filters pcl_ros pcl_conversions)
 
 # get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 # foreach(dir ${dirs})
@@ -48,14 +53,16 @@ ament_target_dependencies(pathFollower rclcpp std_msgs sensor_msgs nav_msgs geom
 # endforeach()
 
 install(TARGETS
-  localPlanner
+  # localPlanner
   pathFollower
+  local_planner_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(
   DIRECTORY
   launch
   paths
+  config
   DESTINATION share/${PROJECT_NAME}
 )
 
