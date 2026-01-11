@@ -1,0 +1,27 @@
+build/
+install/
+log/
+bags/
+.cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+.git/
+.gitignore
+README.md
+*.md
+img/
+# Keep docker folder for Dockerfile context
+!docker/
+
