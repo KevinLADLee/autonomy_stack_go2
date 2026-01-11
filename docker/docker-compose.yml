@@ -1,0 +1,69 @@
+services:
+  autonomy_stack:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      # To use development version, change to:
+      # dockerfile: docker/Dockerfile.dev
+    container_name: autonomy_stack_go2
+    image: autonomy_stack_go2:humble-arm64
+    
+    # Network mode for ROS2 DDS communication
+    network_mode: host
+    
+    # Privileged mode for USB device access
+    privileged: true
+    
+    # NVIDIA GPU runtime for Jetson devices
+    runtime: nvidia
+    
+    # Environment variables
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      # - DISPLAY=$DISPLAY
+      - QT_X11_NO_MITSHM=1
+      - XAUTHORITY=/tmp/.docker.xauth
+      # NVIDIA GPU environment variables
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=0
+      # User ID and Group ID for permission fixing (set by docker-run.sh)
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-1000}
+    
+    # Volume mounts
+    volumes:
+      # Mount source code for development (build/install/log stay in container)
+      - ../src:/workspace/src:rw
+      # Mount bags directory for data recording/playback (persistent storage)
+      - ../bags:/workspace/bags:rw
+      # Mount X11 for GUI applications (RViz)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:rw
+      # Mount USB devices for hardware access
+      - /dev:/dev:rw
+      # Mount NVIDIA libraries for GPU support (Jetson)
+      # Note: These paths may vary depending on JetPack version
+      # If these paths don't exist, comment them out - nvidia runtime should handle GPU access
+      - /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro
+      - /usr/local/cuda:/usr/local/cuda:ro
+    
+    # Devices for USB access (for lidar, joystick, etc.)
+    # Note: These devices may not exist on all systems. Remove or comment out if not needed.
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    #   - /dev/ttyUSB1:/dev/ttyUSB1
+    #   - /dev/ttyACM0:/dev/ttyACM0
+    #   - /dev/ttyACM1:/dev/ttyACM1
+    
+    # Keep container running
+    stdin_open: true
+    tty: true
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # No resource limits - container can use all available hardware resources
+    # This allows the container to behave as close as possible to the physical machine
+
