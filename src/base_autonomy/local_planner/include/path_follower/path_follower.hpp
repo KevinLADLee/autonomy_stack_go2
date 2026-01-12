@@ -4,7 +4,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <nav_msgs/msg/odometry.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/int8.hpp>
 
 namespace path_follower
@@ -116,7 +116,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr sub_path_;
   rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr sub_stop_;
-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_cmd_vel_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_cmd_vel_;
 
   // Timer for 100Hz control loop
   rclcpp::TimerBase::SharedPtr timer_;

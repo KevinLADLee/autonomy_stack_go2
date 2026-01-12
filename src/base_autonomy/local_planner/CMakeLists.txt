@@ -37,7 +37,7 @@ find_package(go2_sport_api REQUIRED)
 add_executable(pathFollower src/pathFollower.cpp)
 
 # New modernized executable using OOP architecture
-add_executable(local_planner_node src/local_planner.cpp)
+add_executable(local_planner_node src/local_planner.cpp src/path_file_io.cpp)
 
 # target_include_directories(pathFollower PUBLIC
 #   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"

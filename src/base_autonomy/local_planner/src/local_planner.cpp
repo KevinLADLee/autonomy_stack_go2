@@ -576,8 +576,9 @@ void LocalPlanner::updateTargetFromGoal()
   float relY = static_cast<float>(-(config_.goalX - state_.x) * sinYaw + (config_.goalY - state_.y) * cosYaw);
   float distance = std::hypot(relX, relY);
 
-  // Update goal validity
-  state_.hasValidGoal = (distance > 0.1f);
+  // Update goal validity - use goalCloseDis instead of hardcoded threshold
+  // This ensures consistency with path follower's goal reaching logic
+  state_.hasValidGoal = (distance > config_.goalCloseDis * 0.5f);
 
   if (state_.hasValidGoal) {
     // Calculate target direction
@@ -690,8 +691,8 @@ void LocalPlanner::calculateRelativeGoal(
   relativeGoalY = static_cast<float>(-(config_.goalX - state_.x) * sinYaw + (config_.goalY - state_.y) * cosYaw);
   relativeGoalDis = std::hypot(relativeGoalX, relativeGoalY);
 
-  // Calculate desired direction
-  if (relativeGoalDis > 0.1f) {
+  // Calculate desired direction - use goalCloseDis instead of hardcoded threshold
+  if (relativeGoalDis > config_.goalCloseDis * 0.5f) {
     desiredDirection = normalizeAngle(std::atan2(relativeGoalY, relativeGoalX) * 180.0f / PI);
   } else {
     desiredDirection = 0.0f;
@@ -799,6 +800,7 @@ void LocalPlanner::checkPointAgainstPaths(
 
 void LocalPlanner::scoreAllPaths(float desiredDir, float relativeGoalDis)
 {
+  (void)desiredDir;  // Suppress unused parameter warning
   // Score all paths and accumulate by group
   int validCount = 0;
   int blockedCount = 0;

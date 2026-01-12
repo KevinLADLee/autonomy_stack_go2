@@ -16,7 +16,7 @@
 #include <std_msgs/msg/bool.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/point_stamped.h>
 #include <geometry_msgs/msg/polygon_stamped.h>
 #include <sensor_msgs/msg/imu.h>
@@ -24,7 +24,7 @@
 
 #include "tf2/transform_datatypes.h"
 #include "tf2_ros/transform_broadcaster.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -200,11 +200,11 @@ void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr ter
   }
 }
 
-void speedHandler(const geometry_msgs::msg::TwistStamped::ConstSharedPtr speedIn)
+void speedHandler(const geometry_msgs::msg::Twist::ConstSharedPtr speedIn)
 {
-  vehicleFwdSpeed = speedIn->twist.linear.x;
-  vehicleLeftSpeed = speedIn->twist.linear.y;
-  vehicleYawRate = speedIn->twist.angular.z;
+  vehicleFwdSpeed = speedIn->linear.x;
+  vehicleLeftSpeed = speedIn->linear.y;
+  vehicleYawRate = speedIn->angular.z;
 }
 
 int main(int argc, char** argv)
@@ -252,7 +252,7 @@ int main(int argc, char** argv)
 
   auto subTerrainCloud = nh->create_subscription<sensor_msgs::msg::PointCloud2>("/terrain_map", 2, terrainCloudHandler);
 
-  auto subSpeed = nh->create_subscription<geometry_msgs::msg::TwistStamped>("/cmd_vel", 5, speedHandler);
+  auto subSpeed = nh->create_subscription<geometry_msgs::msg::Twist>("/cmd_vel", 5, speedHandler);
 
   auto pubVehicleOdom = nh->create_publisher<nav_msgs::msg::Odometry>("/state_estimation", 5);
   nav_msgs::msg::Odometry odomData;

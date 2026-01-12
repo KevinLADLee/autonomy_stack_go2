@@ -1,6 +1,6 @@
 <launch>
 
-  <arg name="vehicleHeight" default="1.5"/>
+  <arg name="vehicleHeight" default="0.45"/>
 
   <node pkg="terrain_analysis" exec="terrainAnalysis" name="terrainAnalysis" output="screen">
     <param name="scanVoxelSize" value="0.05" />
