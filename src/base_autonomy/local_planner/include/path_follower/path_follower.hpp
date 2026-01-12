@@ -57,8 +57,7 @@ struct PathFollowerConfig
   bool noRotAtStop = false;
   bool noRotAtGoal = true;
 
-  // Autonomy mode
-  double autonomySpeed = 1.0;
+  // Goal parameters
   double goalCloseDis = 1.0;
 
   // System
