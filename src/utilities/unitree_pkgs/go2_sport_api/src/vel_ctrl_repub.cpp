@@ -62,20 +62,16 @@ public:
         vel_cmd_suber_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, 
             std::bind(&Go2CmdVelRepub::vel_cmd_callback, this, std::placeholders::_1));
+
+        unitree_api::msg::Request req;
+
+        sport_client_.ClassicWalk(req, true);
         
         RCLCPP_INFO(this->get_logger(), "Node initialized. Protection mode: %s", 
                     enable_vel_cmd_ ? "OFF" : "ON");
         RCLCPP_INFO(this->get_logger(), "Press L1+R1 to toggle protection mode");
     }
 
-    /**
-     * @brief Publish command in control loop
-     * This function should be called periodically (e.g., at 100Hz)
-     */
-    void publish_command_loop()
-    {
-        publish_command();
-    }
 
 private:
     /**
@@ -87,6 +83,8 @@ private:
         vx_ = msg->linear.x;
         vy_ = msg->linear.y;
         vyaw_ = msg->angular.z;
+        // Immediately forward the command upon receipt
+        publish_command();
     }
 
     /**
@@ -178,12 +176,8 @@ int main(int argc, char **argv)
     rclcpp::init(argc, argv);
     auto node = std::make_shared<Go2CmdVelRepub>();
     
-    rclcpp::Rate rate(100);
-    while (rclcpp::ok()) {
-        rclcpp::spin_some(node);
-        node->publish_command_loop();
-        rate.sleep();
-    }
+    // Use spin to wait for messages and process callbacks immediately
+    rclcpp::spin(node);
     
     rclcpp::shutdown();
     return 0;
