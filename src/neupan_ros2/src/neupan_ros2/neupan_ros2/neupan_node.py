@@ -538,8 +538,12 @@ class NeupanCore(Node):
 
         """
         # Publish path messages (info is local, thread-safe)
-        self.plan_pub.publish(self.generate_path_msg(info["opt_state_list"]))
-        self.ref_state_pub.publish(self.generate_path_msg(info["ref_state_list"]))
+        # Use .get() with default empty list to handle cases where keys are missing
+        # (e.g., when robot arrives at target)
+        opt_state_list = info.get("opt_state_list", [])
+        ref_state_list = info.get("ref_state_list", [])
+        self.plan_pub.publish(self.generate_path_msg(opt_state_list))
+        self.ref_state_pub.publish(self.generate_path_msg(ref_state_list))
 
         # Generate twist message using info dict (avoid reading shared state)
         vel_msg = self.generate_twist_msg(action, info["stop"], info["arrive"])
