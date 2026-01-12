@@ -24,7 +24,7 @@ def generate_launch_description():
   declare_vehicleX = DeclareLaunchArgument('vehicleX', default_value='0.0', description='')
   declare_vehicleY = DeclareLaunchArgument('vehicleY', default_value='0.0', description='')
   declare_checkTerrainConn = DeclareLaunchArgument('checkTerrainConn', default_value='true', description='')
-  declare_vehicleHeight = DeclareLaunchArgument('vehicleHeight', default_value='0.366', description='')
+  declare_vehicleHeight = DeclareLaunchArgument('vehicleHeight', default_value='0.40', description='')
 
   start_local_planner = IncludeLaunchDescription(
     FrontendLaunchDescriptionSource(os.path.join(

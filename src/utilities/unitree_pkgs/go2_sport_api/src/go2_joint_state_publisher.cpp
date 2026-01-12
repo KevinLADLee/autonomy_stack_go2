@@ -1,3 +1,4 @@
+#include <array>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include "unitree_go/msg/low_state.hpp"
@@ -58,21 +59,18 @@ private:
         joint_state.header.stamp = this->now();
         joint_state.header.frame_id = "base";
         
-        // Motor indices (from motor_crc.h)
-        // FR: 0,1,2 | FL: 3,4,5 | RR: 6,7,8 | RL: 9,10,11
-        // These correspond to: hip, thigh, calf for each leg
-        std::vector<int> motor_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-        
         joint_state.name = joint_names_;
         joint_state.position.resize(joint_names_.size());
         joint_state.velocity.resize(joint_names_.size());
         joint_state.effort.resize(joint_names_.size());
         
         // Convert motor states to joint states
+        // Motor indices (from motor_crc.h): FR: 0,1,2 | FL: 3,4,5 | RR: 6,7,8 | RL: 9,10,11
         // MotorState fields:
         // - q: joint position (radians, range: -7 to +7)
         // - dq: joint velocity (rad/s)
         // - tau_est: joint torque/effort (N.m)
+        constexpr std::array<int, 12> motor_indices = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
         for (size_t i = 0; i < motor_indices.size(); ++i)
         {
             int motor_idx = motor_indices[i];

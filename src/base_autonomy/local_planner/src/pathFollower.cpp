@@ -153,7 +153,7 @@ void PathFollower::initializeSubscribers()
 
 void PathFollower::initializePublishers()
 {
-  pub_cmd_vel_ = create_publisher<geometry_msgs::msg::TwistStamped>("/cmd_vel", 5);
+  pub_cmd_vel_ = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 5);
 }
 
 void PathFollower::initializeTimer()
@@ -435,12 +435,10 @@ void PathFollower::applySafetyChecks()
 
 void PathFollower::publishCommand(float linearX, float linearY, float angularZ)
 {
-  geometry_msgs::msg::TwistStamped cmd_vel;
-  cmd_vel.header.frame_id = "vehicle";
-  cmd_vel.header.stamp = rclcpp::Time(static_cast<uint64_t>(vehicle_.odomTime * 1e9));
-  cmd_vel.twist.linear.x = linearX;
-  cmd_vel.twist.linear.y = linearY;
-  cmd_vel.twist.angular.z = angularZ;
+  geometry_msgs::msg::Twist cmd_vel;
+  cmd_vel.linear.x = linearX;
+  cmd_vel.linear.y = linearY;
+  cmd_vel.angular.z = angularZ;
   pub_cmd_vel_->publish(cmd_vel);
 
   // Note: Go2 command forwarding is now handled by vel_ctrl_repub node
