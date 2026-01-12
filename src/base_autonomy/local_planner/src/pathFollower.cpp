@@ -54,8 +54,7 @@ void PathFollowerConfig::loadFromParameters(rclcpp::Node* node)
   node->get_parameter("noRotAtStop", noRotAtStop);
   node->get_parameter("noRotAtGoal", noRotAtGoal);
 
-  // Autonomy mode
-  node->get_parameter("autonomySpeed", autonomySpeed);
+  // Goal parameters
   node->get_parameter("goalCloseDis", goalCloseDis);
 
   // System
@@ -124,8 +123,7 @@ void PathFollower::declareParameters()
   declare_parameter("noRotAtStop", config_.noRotAtStop);
   declare_parameter("noRotAtGoal", config_.noRotAtGoal);
 
-  // Autonomy mode
-  declare_parameter("autonomySpeed", config_.autonomySpeed);
+  // Goal parameters
   declare_parameter("goalCloseDis", config_.goalCloseDis);
 
   // System
@@ -308,7 +306,7 @@ void PathFollower::updatePathFollowing()
   }
 
   // 5. Calculate target speed based on direction
-  float targetSpeed = config_.autonomySpeed;
+  float targetSpeed = static_cast<float>(config_.maxSpeed);
   if (!pathState_.forward) {
     dirDiff = normalizeAngle(dirDiff + PI);
     targetSpeed *= -1.0f;

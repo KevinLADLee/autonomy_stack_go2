@@ -47,9 +47,3 @@ local_planner_node:
     pathRangeStep: 0.5
     pathRangeBySpeed: true
     pathCropByGoal: true
-
-    # Autonomy Mode
-    autonomyMode: false
-    autonomySpeed: 1.0
-    joyToSpeedDelay: 2.0
-    joyToCheckObstacleDelay: 5.0

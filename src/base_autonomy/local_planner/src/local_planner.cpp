@@ -4,28 +4,29 @@
 namespace local_planner
 {
 
+using constants::kPi;
+
+// Use PI constant for mathematical calculations
+constexpr float PI = constants::kPi;
+
 // ============================================================================
-// PlannerConfig 实现
+// PlannerConfig Implementation
 // ============================================================================
 
 void PlannerConfig::loadFromParameters(rclcpp::Node* node)
 {
-  // 路径文件夹
   node->get_parameter("pathFolder", pathFolder);
 
-  // 车辆参数
   node->get_parameter("vehicleLength", vehicleLength);
   node->get_parameter("vehicleWidth", vehicleWidth);
   node->get_parameter("sensorOffsetX", sensorOffsetX);
   node->get_parameter("sensorOffsetY", sensorOffsetY);
   node->get_parameter("twoWayDrive", twoWayDrive);
 
-  // 传感器参数
   node->get_parameter("laserVoxelSize", laserVoxelSize);
   node->get_parameter("terrainVoxelSize", terrainVoxelSize);
   node->get_parameter("useTerrainAnalysis", useTerrainAnalysis);
 
-  // 障碍物检测
   node->get_parameter("checkObstacle", checkObstacle);
   node->get_parameter("checkRotObstacle", checkRotObstacle);
   node->get_parameter("adjacentRange", adjacentRange);
@@ -35,7 +36,6 @@ void PlannerConfig::loadFromParameters(rclcpp::Node* node)
   node->get_parameter("costScore", costScore);
   node->get_parameter("useCost", useCost);
 
-  // 路径参数
   node->get_parameter("pointPerPathThre", pointPerPathThre);
   node->get_parameter("minRelZ", minRelZ);
   node->get_parameter("maxRelZ", maxRelZ);
@@ -52,9 +52,6 @@ void PlannerConfig::loadFromParameters(rclcpp::Node* node)
   node->get_parameter("pathRangeBySpeed", pathRangeBySpeed);
   node->get_parameter("pathCropByGoal", pathCropByGoal);
 
-  // 自主模式
-  node->get_parameter("autonomyMode", autonomyMode);
-  node->get_parameter("autonomySpeed", autonomySpeed);
   node->get_parameter("goalCloseDis", goalCloseDis);
   node->get_parameter("goalClearRange", goalClearRange);
   node->get_parameter("goalX", goalX);
@@ -62,25 +59,21 @@ void PlannerConfig::loadFromParameters(rclcpp::Node* node)
 }
 
 // ============================================================================
-// PointCloudData 实现
+// PointCloudData Implementation
 // ============================================================================
 
 PointCloudData::PointCloudData()
-: laserCloud(new pcl::PointCloud<pcl::PointXYZI>())
-, laserCloudCrop(new pcl::PointCloud<pcl::PointXYZI>())
-, laserCloudDwz(new pcl::PointCloud<pcl::PointXYZI>())
-, terrainCloud(new pcl::PointCloud<pcl::PointXYZI>())
-, terrainCloudCrop(new pcl::PointCloud<pcl::PointXYZI>())
-, terrainCloudDwz(new pcl::PointCloud<pcl::PointXYZI>())
-, laserCloudCount(0)
-, plannerCloud(new pcl::PointCloud<pcl::PointXYZI>())
-, plannerCloudCrop(new pcl::PointCloud<pcl::PointXYZI>())
-, boundaryCloud(new pcl::PointCloud<pcl::PointXYZI>())
-, addedObstacles(new pcl::PointCloud<pcl::PointXYZI>())
-, newLaserCloud(false)
-, newTerrainCloud(false)
+  : laserCloud(new pcl::PointCloud<pcl::PointXYZI>())
+  , laserCloudCrop(new pcl::PointCloud<pcl::PointXYZI>())
+  , laserCloudDwz(new pcl::PointCloud<pcl::PointXYZI>())
+  , terrainCloud(new pcl::PointCloud<pcl::PointXYZI>())
+  , terrainCloudCrop(new pcl::PointCloud<pcl::PointXYZI>())
+  , terrainCloudDwz(new pcl::PointCloud<pcl::PointXYZI>())
+  , plannerCloud(new pcl::PointCloud<pcl::PointXYZI>())
+  , plannerCloudCrop(new pcl::PointCloud<pcl::PointXYZI>())
+  , boundaryCloud(new pcl::PointCloud<pcl::PointXYZI>())
+  , addedObstacles(new pcl::PointCloud<pcl::PointXYZI>())
 {
-  // 预分配点云栈
   laserCloudStack.resize(PathData::laserCloudStackNum);
   for (auto& cloud : laserCloudStack) {
     cloud.reset(new pcl::PointCloud<pcl::PointXYZI>());
@@ -88,7 +81,7 @@ PointCloudData::PointCloudData()
 }
 
 // ============================================================================
-// PathData 实现
+// PathData Implementation
 // ============================================================================
 
 PathData::PathData()
@@ -102,9 +95,9 @@ void PathData::resizeArrays()
 {
   pathList.resize(pathNum, 0);
   endDirPathList.resize(pathNum, 0.0f);
-  clearPathList.resize(36 * pathNum, 0);
-  pathPenaltyList.resize(36 * pathNum, 0.0f);
-  clearPathPerGroupScore.resize(36 * groupNum, 0.0f);
+  clearPathList.resize(constants::kNumRotationDirections * pathNum, 0);
+  pathPenaltyList.resize(constants::kNumRotationDirections * pathNum, 0.0f);
+  clearPathPerGroupScore.resize(constants::kNumRotationDirections * groupNum, 0.0f);
   correspondences.resize(gridVoxelNum);
 
   startPaths.resize(groupNum);
@@ -126,7 +119,7 @@ bool PathData::readStartPaths(const std::string& pathFolder)
 bool PathData::readPaths(const std::string& pathFolder)
 {
 #if PLOTPATHSET == 1
-  return io::readPaths(pathFolder, paths, pathNum, kPointSkipCount);
+  return io::readPaths(pathFolder, paths, pathNum, constants::kPointSkipCount);
 #else
   return true;
 #endif
@@ -143,107 +136,85 @@ bool PathData::readCorrespondences(const std::string& pathFolder)
 }
 
 // ============================================================================
-// LocalPlanner 类实现
+// LocalPlanner Implementation
 // ============================================================================
 
 LocalPlanner::LocalPlanner(const rclcpp::NodeOptions& options)
-: rclcpp::Node("local_planner", options)
+  : rclcpp::Node("local_planner", options)
 {
-  RCLCPP_INFO(this->get_logger(), "Initializing LocalPlanner...");
+  RCLCPP_INFO(get_logger(), "Initializing LocalPlanner...");
 
-  // 1. 声明参数
   declareParameters();
-
-  // 2. 加载参数
   loadParameters();
 
-  // 3. 初始化点云数据
   clouds_ = PointCloudData();
   pathData_ = PathData();
   pathData_.resizeArrays();
 
-  // 4. 初始化滤波器
   initializeFilters();
 
-  // 5. 加载路径文件
   if (!loadPathFiles()) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to load path files");
+    RCLCPP_ERROR(get_logger(), "Failed to load path files");
     return;
   }
 
-  // 6. 初始化订阅者
-  initializeSubscribers();
+  initializeROSInterfaces();
 
-  // 7. 初始化发布者
-  initializePublishers();
-
-  // 8. 初始化定时器 (100Hz)
-  timer_ = this->create_wall_timer(
+  timer_ = create_wall_timer(
     std::chrono::milliseconds(10),
-    std::bind(&LocalPlanner::timerCallback, this)
-  );
+    std::bind(&LocalPlanner::timerCallback, this));
 
-  RCLCPP_INFO(this->get_logger(), "LocalPlanner initialized successfully");
+  RCLCPP_INFO(get_logger(), "LocalPlanner initialized successfully");
 }
 
 void LocalPlanner::declareParameters()
 {
-  // 路径文件夹
-  this->declare_parameter<std::string>("pathFolder", config_.pathFolder);
+  declare_parameter<std::string>("pathFolder", config_.pathFolder);
 
-  // 车辆参数
-  this->declare_parameter<double>("vehicleLength", config_.vehicleLength);
-  this->declare_parameter<double>("vehicleWidth", config_.vehicleWidth);
-  this->declare_parameter<double>("sensorOffsetX", config_.sensorOffsetX);
-  this->declare_parameter<double>("sensorOffsetY", config_.sensorOffsetY);
-  this->declare_parameter<bool>("twoWayDrive", config_.twoWayDrive);
+  declare_parameter<double>("vehicleLength", config_.vehicleLength);
+  declare_parameter<double>("vehicleWidth", config_.vehicleWidth);
+  declare_parameter<double>("sensorOffsetX", config_.sensorOffsetX);
+  declare_parameter<double>("sensorOffsetY", config_.sensorOffsetY);
+  declare_parameter<bool>("twoWayDrive", config_.twoWayDrive);
 
-  // 传感器参数
-  this->declare_parameter<double>("laserVoxelSize", config_.laserVoxelSize);
-  this->declare_parameter<double>("terrainVoxelSize", config_.terrainVoxelSize);
-  this->declare_parameter<bool>("useTerrainAnalysis", config_.useTerrainAnalysis);
+  declare_parameter<double>("laserVoxelSize", config_.laserVoxelSize);
+  declare_parameter<double>("terrainVoxelSize", config_.terrainVoxelSize);
+  declare_parameter<bool>("useTerrainAnalysis", config_.useTerrainAnalysis);
 
-  // 障碍物检测
-  this->declare_parameter<bool>("checkObstacle", config_.checkObstacle);
-  this->declare_parameter<bool>("checkRotObstacle", config_.checkRotObstacle);
-  this->declare_parameter<double>("adjacentRange", config_.adjacentRange);
-  this->declare_parameter<double>("obstacleHeightThre", config_.obstacleHeightThre);
-  this->declare_parameter<double>("groundHeightThre", config_.groundHeightThre);
-  this->declare_parameter<double>("costHeightThre", config_.costHeightThre);
-  this->declare_parameter<double>("costScore", config_.costScore);
-  this->declare_parameter<bool>("useCost", config_.useCost);
+  declare_parameter<bool>("checkObstacle", config_.checkObstacle);
+  declare_parameter<bool>("checkRotObstacle", config_.checkRotObstacle);
+  declare_parameter<double>("adjacentRange", config_.adjacentRange);
+  declare_parameter<double>("obstacleHeightThre", config_.obstacleHeightThre);
+  declare_parameter<double>("groundHeightThre", config_.groundHeightThre);
+  declare_parameter<double>("costHeightThre", config_.costHeightThre);
+  declare_parameter<double>("costScore", config_.costScore);
+  declare_parameter<bool>("useCost", config_.useCost);
 
-  // 路径参数
-  this->declare_parameter<int>("pointPerPathThre", config_.pointPerPathThre);
-  this->declare_parameter<double>("minRelZ", config_.minRelZ);
-  this->declare_parameter<double>("maxRelZ", config_.maxRelZ);
-  this->declare_parameter<double>("maxSpeed", config_.maxSpeed);
-  this->declare_parameter<double>("dirWeight", config_.dirWeight);
-  this->declare_parameter<double>("dirThre", config_.dirThre);
-  this->declare_parameter<bool>("dirToVehicle", config_.dirToVehicle);
-  this->declare_parameter<double>("pathScale", config_.pathScale);
-  this->declare_parameter<double>("minPathScale", config_.minPathScale);
-  this->declare_parameter<double>("pathScaleStep", config_.pathScaleStep);
-  this->declare_parameter<bool>("pathScaleBySpeed", config_.pathScaleBySpeed);
-  this->declare_parameter<double>("minPathRange", config_.minPathRange);
-  this->declare_parameter<double>("pathRangeStep", config_.pathRangeStep);
-  this->declare_parameter<bool>("pathRangeBySpeed", config_.pathRangeBySpeed);
-  this->declare_parameter<bool>("pathCropByGoal", config_.pathCropByGoal);
+  declare_parameter<int>("pointPerPathThre", config_.pointPerPathThre);
+  declare_parameter<double>("minRelZ", config_.minRelZ);
+  declare_parameter<double>("maxRelZ", config_.maxRelZ);
+  declare_parameter<double>("maxSpeed", config_.maxSpeed);
+  declare_parameter<double>("dirWeight", config_.dirWeight);
+  declare_parameter<double>("dirThre", config_.dirThre);
+  declare_parameter<bool>("dirToVehicle", config_.dirToVehicle);
+  declare_parameter<double>("pathScale", config_.pathScale);
+  declare_parameter<double>("minPathScale", config_.minPathScale);
+  declare_parameter<double>("pathScaleStep", config_.pathScaleStep);
+  declare_parameter<bool>("pathScaleBySpeed", config_.pathScaleBySpeed);
+  declare_parameter<double>("minPathRange", config_.minPathRange);
+  declare_parameter<double>("pathRangeStep", config_.pathRangeStep);
+  declare_parameter<bool>("pathRangeBySpeed", config_.pathRangeBySpeed);
+  declare_parameter<bool>("pathCropByGoal", config_.pathCropByGoal);
 
-  // 自主模式
-  this->declare_parameter<bool>("autonomyMode", config_.autonomyMode);
-  this->declare_parameter<double>("autonomySpeed", config_.autonomySpeed);
-  this->declare_parameter<double>("goalCloseDis", config_.goalCloseDis);
-  this->declare_parameter<double>("goalClearRange", config_.goalClearRange);
-  this->declare_parameter<double>("goalX", config_.goalX);
-  this->declare_parameter<double>("goalY", config_.goalY);
+  declare_parameter<double>("goalCloseDis", config_.goalCloseDis);
+  declare_parameter<double>("goalClearRange", config_.goalClearRange);
+  declare_parameter<double>("goalX", config_.goalX);
+  declare_parameter<double>("goalY", config_.goalY);
 }
 
 void LocalPlanner::loadParameters()
 {
   config_.loadFromParameters(this);
-
-  // Initialize to no valid goal - robot waits for goal_pose to start moving
   state_.normalizedSpeed = 0.0f;
   state_.targetDirection = 0.0f;
   state_.hasValidGoal = false;
@@ -252,97 +223,82 @@ void LocalPlanner::loadParameters()
 void LocalPlanner::initializeFilters()
 {
   clouds_.laserDwzFilter.setLeafSize(
-    config_.laserVoxelSize,
-    config_.laserVoxelSize,
-    config_.laserVoxelSize
-  );
-
+    config_.laserVoxelSize, config_.laserVoxelSize, config_.laserVoxelSize);
   clouds_.terrainDwzFilter.setLeafSize(
-    config_.terrainVoxelSize,
-    config_.terrainVoxelSize,
-    config_.terrainVoxelSize
-  );
+    config_.terrainVoxelSize, config_.terrainVoxelSize, config_.terrainVoxelSize);
 }
 
 bool LocalPlanner::loadPathFiles()
 {
-  RCLCPP_INFO(this->get_logger(), "Reading path files from: %s", config_.pathFolder.c_str());
+  RCLCPP_INFO(get_logger(), "Reading path files from: %s", config_.pathFolder.c_str());
 
   if (!pathData_.readStartPaths(config_.pathFolder)) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to read start paths");
+    RCLCPP_ERROR(get_logger(), "Failed to read start paths");
     return false;
   }
 
 #if PLOTPATHSET == 1
   if (!pathData_.readPaths(config_.pathFolder)) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to read paths");
+    RCLCPP_ERROR(get_logger(), "Failed to read paths");
     return false;
   }
 #endif
 
   if (!pathData_.readPathList(config_.pathFolder)) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to read path list");
+    RCLCPP_ERROR(get_logger(), "Failed to read path list");
     return false;
   }
 
   if (!pathData_.readCorrespondences(config_.pathFolder)) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to read correspondences");
+    RCLCPP_ERROR(get_logger(), "Failed to read correspondences");
     return false;
   }
 
-  RCLCPP_INFO(this->get_logger(), "Path files loaded successfully");
+  RCLCPP_INFO(get_logger(), "Path files loaded successfully");
   return true;
 }
 
-void LocalPlanner::initializeSubscribers()
+void LocalPlanner::initializeROSInterfaces()
 {
-  sub_odometry_ = this->create_subscription<nav_msgs::msg::Odometry>(
+  // Initialize subscribers
+  sub_odometry_ = create_subscription<nav_msgs::msg::Odometry>(
     "/state_estimation", 5,
-    std::bind(&LocalPlanner::odometryCallback, this, std::placeholders::_1)
-  );
+    std::bind(&LocalPlanner::odometryCallback, this, std::placeholders::_1));
 
-  sub_laser_cloud_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+  sub_laser_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "/registered_scan", 5,
-    std::bind(&LocalPlanner::laserCloudCallback, this, std::placeholders::_1)
-  );
+    std::bind(&LocalPlanner::laserCloudCallback, this, std::placeholders::_1));
 
-  sub_terrain_cloud_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+  sub_terrain_cloud_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "/terrain_map", 5,
-    std::bind(&LocalPlanner::terrainCloudCallback, this, std::placeholders::_1)
-  );
+    std::bind(&LocalPlanner::terrainCloudCallback, this, std::placeholders::_1));
 
-  sub_goal_pose_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+  sub_goal_pose_ = create_subscription<geometry_msgs::msg::PoseStamped>(
     "/goal_pose", 1,
-    std::bind(&LocalPlanner::goalPoseCallback, this, std::placeholders::_1)
-  );
+    std::bind(&LocalPlanner::goalPoseCallback, this, std::placeholders::_1));
 
-  sub_boundary_ = this->create_subscription<geometry_msgs::msg::PolygonStamped>(
+  sub_boundary_ = create_subscription<geometry_msgs::msg::PolygonStamped>(
     "/navigation_boundary", 5,
-    std::bind(&LocalPlanner::boundaryCallback, this, std::placeholders::_1)
-  );
+    std::bind(&LocalPlanner::boundaryCallback, this, std::placeholders::_1));
 
-  sub_added_obstacles_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+  sub_added_obstacles_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "/added_obstacles", 5,
-    std::bind(&LocalPlanner::addedObstaclesCallback, this, std::placeholders::_1)
-  );
+    std::bind(&LocalPlanner::addedObstaclesCallback, this, std::placeholders::_1));
 
-  sub_check_obstacle_ = this->create_subscription<std_msgs::msg::Bool>(
+  sub_check_obstacle_ = create_subscription<std_msgs::msg::Bool>(
     "/check_obstacle", 5,
-    std::bind(&LocalPlanner::checkObstacleCallback, this, std::placeholders::_1)
-  );
-}
+    std::bind(&LocalPlanner::checkObstacleCallback, this, std::placeholders::_1));
 
-void LocalPlanner::initializePublishers()
-{
-  pub_path_ = this->create_publisher<nav_msgs::msg::Path>("/autonomy_stack/path", 5);
+  // Initialize publishers
+  pub_path_ = create_publisher<nav_msgs::msg::Path>("/autonomy_stack/path", 5);
 
 #if PLOTPATHSET == 1
-  pub_free_paths_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/autonomy_stack/free_paths", 2);
+  pub_free_paths_ = create_publisher<sensor_msgs::msg::PointCloud2>("/autonomy_stack/free_paths", 2);
 #endif
 }
 
 // ============================================================================
-// ROS2 回调函数
+// ROS2 Callbacks
 // ============================================================================
 
 void LocalPlanner::odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -350,142 +306,128 @@ void LocalPlanner::odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg
   state_.odomTime = rclcpp::Time(msg->header.stamp).seconds();
 
   double roll, pitch, yaw;
-  geometry_msgs::msg::Quaternion geoQuat = msg->pose.pose.orientation;
-  tf2::Matrix3x3(tf2::Quaternion(geoQuat.x, geoQuat.y, geoQuat.z, geoQuat.w)).getRPY(roll, pitch, yaw);
+  const auto& quat = msg->pose.pose.orientation;
+  tf2::Matrix3x3(tf2::Quaternion(quat.x, quat.y, quat.z, quat.w)).getRPY(roll, pitch, yaw);
 
   state_.roll = static_cast<float>(roll);
   state_.pitch = static_cast<float>(pitch);
   state_.yaw = static_cast<float>(yaw);
-  state_.x = static_cast<float>(msg->pose.pose.position.x - std::cos(yaw) * config_.sensorOffsetX + std::sin(yaw) * config_.sensorOffsetY);
-  state_.y = static_cast<float>(msg->pose.pose.position.y - std::sin(yaw) * config_.sensorOffsetX - std::cos(yaw) * config_.sensorOffsetY);
+  state_.x = static_cast<float>(
+    msg->pose.pose.position.x - std::cos(yaw) * config_.sensorOffsetX +
+    std::sin(yaw) * config_.sensorOffsetY);
+  state_.y = static_cast<float>(
+    msg->pose.pose.position.y - std::sin(yaw) * config_.sensorOffsetX -
+    std::cos(yaw) * config_.sensorOffsetY);
   state_.z = static_cast<float>(msg->pose.pose.position.z);
 }
 
 void LocalPlanner::laserCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-  static int callbackCount = 0;
-  callbackCount++;
-
-  if (!config_.useTerrainAnalysis) {
-    clouds_.laserCloud->clear();
-    pcl::fromROSMsg(*msg, *clouds_.laserCloud);
-
-    if (callbackCount <= 3) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG laserCloudCallback #%d: received %zu points, state=(%.2f,%.2f)",
-        callbackCount, clouds_.laserCloud->points.size(), state_.x, state_.y);
-    }
-
-    pcl::PointXYZI point;
-    clouds_.laserCloudCrop->clear();
-    for (const auto& pt : clouds_.laserCloud->points) {
-      float pointX = pt.x;
-      float pointY = pt.y;
-      float pointZ = pt.z;
-
-      float dis = std::hypot(pointX - state_.x, pointY - state_.y);
-      if (dis < config_.adjacentRange) {
-        point.x = pointX;
-        point.y = pointY;
-        point.z = pointZ;
-        clouds_.laserCloudCrop->push_back(point);
-      }
-    }
-
-    clouds_.laserCloudDwz->clear();
-    clouds_.laserDwzFilter.setInputCloud(clouds_.laserCloudCrop);
-    clouds_.laserDwzFilter.filter(*clouds_.laserCloudDwz);
-
-    clouds_.newLaserCloud = true;
+  if (config_.useTerrainAnalysis) {
+    return;
   }
+
+  clouds_.laserCloud->clear();
+  pcl::fromROSMsg(*msg, *clouds_.laserCloud);
+
+  clouds_.laserCloudCrop->clear();
+  for (const auto& pt : clouds_.laserCloud->points) {
+    float dis = std::hypot(pt.x - state_.x, pt.y - state_.y);
+    if (dis < config_.adjacentRange) {
+      pcl::PointXYZI point;
+      point.x = pt.x;
+      point.y = pt.y;
+      point.z = pt.z;
+      point.intensity = pt.intensity;
+      clouds_.laserCloudCrop->push_back(point);
+    }
+  }
+
+  clouds_.laserCloudDwz->clear();
+  clouds_.laserDwzFilter.setInputCloud(clouds_.laserCloudCrop);
+  clouds_.laserDwzFilter.filter(*clouds_.laserCloudDwz);
+
+  clouds_.newLaserCloud = true;
 }
 
 void LocalPlanner::terrainCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-  static int callbackCount = 0;
-  callbackCount++;
-
-  if (config_.useTerrainAnalysis) {
-    clouds_.terrainCloud->clear();
-    pcl::fromROSMsg(*msg, *clouds_.terrainCloud);
-
-    if (callbackCount <= 3) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG terrainCloudCallback #%d: received %zu points, state=(%.2f,%.2f)",
-        callbackCount, clouds_.terrainCloud->points.size(), state_.x, state_.y);
-    }
-
-    pcl::PointXYZI point;
-    clouds_.terrainCloudCrop->clear();
-    for (const auto& pt : clouds_.terrainCloud->points) {
-      float pointX = pt.x;
-      float pointY = pt.y;
-      float pointZ = pt.z;
-
-      float dis = std::hypot(pointX - state_.x, pointY - state_.y);
-      if (dis < config_.adjacentRange && (pt.intensity > config_.obstacleHeightThre || config_.useCost)) {
-        point.x = pointX;
-        point.y = pointY;
-        point.z = pointZ;
-        point.intensity = pt.intensity;
-        clouds_.terrainCloudCrop->push_back(point);
-      }
-    }
-
-    clouds_.terrainCloudDwz->clear();
-    clouds_.terrainDwzFilter.setInputCloud(clouds_.terrainCloudCrop);
-    clouds_.terrainDwzFilter.filter(*clouds_.terrainCloudDwz);
-
-    clouds_.newTerrainCloud = true;
+  if (!config_.useTerrainAnalysis) {
+    return;
   }
+
+  clouds_.terrainCloud->clear();
+  pcl::fromROSMsg(*msg, *clouds_.terrainCloud);
+
+  clouds_.terrainCloudCrop->clear();
+  for (const auto& pt : clouds_.terrainCloud->points) {
+    float dis = std::hypot(pt.x - state_.x, pt.y - state_.y);
+    if (dis < config_.adjacentRange && (pt.intensity > config_.obstacleHeightThre || config_.useCost)) {
+      pcl::PointXYZI point;
+      point.x = pt.x;
+      point.y = pt.y;
+      point.z = pt.z;
+      point.intensity = pt.intensity;
+      clouds_.terrainCloudCrop->push_back(point);
+    }
+  }
+
+  clouds_.terrainCloudDwz->clear();
+  clouds_.terrainDwzFilter.setInputCloud(clouds_.terrainCloudCrop);
+  clouds_.terrainDwzFilter.filter(*clouds_.terrainCloudDwz);
+
+  clouds_.newTerrainCloud = true;
 }
 
 void LocalPlanner::goalPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
   config_.goalX = msg->pose.position.x;
   config_.goalY = msg->pose.position.y;
-
-  // Immediately calculate target direction
   updateTargetFromGoal();
 
-  RCLCPP_INFO(this->get_logger(), "Received goal_pose: x=%.2f, y=%.2f, frame_id=%s",
-    config_.goalX, config_.goalY, msg->header.frame_id.c_str());
+  RCLCPP_INFO(get_logger(), "Received goal_pose: x=%.2f, y=%.2f", config_.goalX, config_.goalY);
 }
 
 void LocalPlanner::boundaryCallback(const geometry_msgs::msg::PolygonStamped::SharedPtr msg)
 {
   clouds_.boundaryCloud->clear();
-  pcl::PointXYZI point, point1, point2;
-  int boundarySize = msg->polygon.points.size();
 
-  if (boundarySize >= 1) {
-    point2.x = msg->polygon.points[0].x;
-    point2.y = msg->polygon.points[0].y;
-    point2.z = msg->polygon.points[0].z;
+  const int boundarySize = static_cast<int>(msg->polygon.points.size());
+  if (boundarySize < 1) {
+    return;
   }
+
+  pcl::PointXYZI point1;
+  pcl::PointXYZI point2;
+  point2.x = msg->polygon.points[0].x;
+  point2.y = msg->polygon.points[0].y;
+  point2.z = msg->polygon.points[0].z;
 
   for (int i = 0; i < boundarySize; i++) {
     point1 = point2;
-
     point2.x = msg->polygon.points[i].x;
     point2.y = msg->polygon.points[i].y;
     point2.z = msg->polygon.points[i].z;
 
-    if (point1.z == point2.z) {
-      float disX = point1.x - point2.x;
-      float disY = point1.y - point2.y;
-      float dis = std::hypot(disX, disY);
+    if (point1.z != point2.z) {
+      continue;
+    }
 
-      int pointNum = static_cast<int>(dis / config_.terrainVoxelSize) + 1;
-      for (int pointID = 0; pointID < pointNum; pointID++) {
-        point.x = static_cast<float>(pointID) / static_cast<float>(pointNum) * point1.x +
-                  (1.0f - static_cast<float>(pointID) / static_cast<float>(pointNum)) * point2.x;
-        point.y = static_cast<float>(pointID) / static_cast<float>(pointNum) * point1.y +
-                  (1.0f - static_cast<float>(pointID) / static_cast<float>(pointNum)) * point2.y;
-        point.z = 0.0f;
-        point.intensity = 100.0f;
+    float disX = point1.x - point2.x;
+    float disY = point1.y - point2.y;
+    float dis = std::hypot(disX, disY);
 
-        for (int j = 0; j < config_.pointPerPathThre; j++) {
-          clouds_.boundaryCloud->push_back(point);
-        }
+    int pointNum = static_cast<int>(dis / config_.terrainVoxelSize) + 1;
+    for (int pointID = 0; pointID < pointNum; pointID++) {
+      float ratio = static_cast<float>(pointID) / static_cast<float>(pointNum);
+      pcl::PointXYZI point;
+      point.x = ratio * point1.x + (1.0f - ratio) * point2.x;
+      point.y = ratio * point1.y + (1.0f - ratio) * point2.y;
+      point.z = 0.0f;
+      point.intensity = 100.0f;
+
+      for (int j = 0; j < config_.pointPerPathThre; j++) {
+        clouds_.boundaryCloud->push_back(point);
       }
     }
   }
@@ -503,83 +445,42 @@ void LocalPlanner::addedObstaclesCallback(const sensor_msgs::msg::PointCloud2::S
 
 void LocalPlanner::checkObstacleCallback(const std_msgs::msg::Bool::SharedPtr msg)
 {
-  // 直接设置障碍物检测标志（自主模式下通过话题控制）
-  if (config_.autonomyMode) {
-    config_.checkObstacle = msg->data;
-  }
+  config_.checkObstacle = msg->data;
 }
 
 // ============================================================================
-// 定时器回调 - 主处理循环
+// Timer Callback - Main Processing Loop
 // ============================================================================
 
 void LocalPlanner::timerCallback()
 {
-  // 处理回调以最小化命令延迟
-  // rclcpp::spin_some(shared_from_this());
-
-  static int timerCount = 0;
-  timerCount++;
-
-  // 如果有新点云数据，处理它（不包括变换）
   if (clouds_.newLaserCloud || clouds_.newTerrainCloud) {
     processPointClouds();
   }
 
-  // Always transform for path planning if we have point cloud data
-  // This ensures plannerCloudCrop is always up-to-date for the current robot position
   if (clouds_.plannerCloud->points.size() > 0) {
-    if (timerCount == 100) {
-      RCLCPP_INFO(this->get_logger(), "CRITICAL: timerCallback#%d calling transform, plannerCloud=%zu BEFORE transform",
-        timerCount, clouds_.plannerCloud->points.size());
-    }
-
-    size_t sizeBeforeTransform = clouds_.plannerCloud->points.size();
     transformAndCropClouds();
-
-    // Warn if transform resulted in empty output (indicates bug)
-    if (timerCount <= 5 && sizeBeforeTransform > 0 && clouds_.plannerCloudCrop->points.size() == 0) {
-      RCLCPP_WARN(this->get_logger(),
-        "WARNING: transformAndCropClouds() resulted in empty plannerCloudCrop! "
-        "plannerCloud had %zu points. Check transformAndCropClouds() implementation.",
-        sizeBeforeTransform);
-    }
   }
 
-  // 如果有有效的目标且有点云数据，进行路径规划
   if (state_.hasValidGoal && clouds_.plannerCloudCrop->points.size() > 0) {
     nav_msgs::msg::Path path;
     bool pathFound = findPath(path);
 
-    // Only publish path if we found a valid one
     if (pathFound && state_.normalizedSpeed > 0.0f) {
       publishPath(path);
     }
     publishFreePaths();
   }
-
-  // DEBUG: Log timer callback status every 100 iterations
-  if (timerCount % 100 == 0) {
-    RCLCPP_INFO(this->get_logger(), "DEBUG timerCallback #%d: hasValidGoal=%d, plannerCloud size=%zu, plannerCloudCrop size=%zu, newLaser=%d, newTerrain=%d",
-      timerCount, state_.hasValidGoal, clouds_.plannerCloud->points.size(), clouds_.plannerCloudCrop->points.size(), clouds_.newLaserCloud, clouds_.newTerrainCloud);
-  }
 }
 
 // ============================================================================
-// 核心处理方法
+// Point Cloud Processing
 // ============================================================================
 
 void LocalPlanner::processPointClouds()
 {
-  static bool firstCall = true;
-
   if (clouds_.newLaserCloud) {
     clouds_.newLaserCloud = false;
-
-    if (firstCall) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG processPointClouds: newLaserCloud, laserCloudDwz size=%zu",
-        clouds_.laserCloudDwz->points.size());
-    }
 
     clouds_.laserCloudStack[clouds_.laserCloudCount]->clear();
     *clouds_.laserCloudStack[clouds_.laserCloudCount] = *clouds_.laserCloudDwz;
@@ -589,71 +490,47 @@ void LocalPlanner::processPointClouds()
     for (const auto& cloud : clouds_.laserCloudStack) {
       *clouds_.plannerCloud += *cloud;
     }
-
-    if (firstCall) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG processPointClouds: after processing, plannerCloud size=%zu",
-        clouds_.plannerCloud->points.size());
-      firstCall = false;
-    }
   }
 
   if (clouds_.newTerrainCloud) {
     clouds_.newTerrainCloud = false;
-
-    if (firstCall) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG processPointClouds: newTerrainCloud, terrainCloudDwz size=%zu",
-        clouds_.terrainCloudDwz->points.size());
-    }
-
-    // FIX: Use proper PCL copy method instead of assignment operator
-    // The assignment operator might not work correctly with shared pointers
     pcl::copyPointCloud(*clouds_.terrainCloudDwz, *clouds_.plannerCloud);
-
-    if (firstCall) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG processPointClouds: after processing, plannerCloud size=%zu",
-        clouds_.plannerCloud->points.size());
-      firstCall = false;
-    }
   }
-
-  // CRITICAL: plannerCloud PERSISTS here - it's only updated when new data arrives
-  // This matches the original code behavior where plannerCloud is maintained across iterations
 }
 
 void LocalPlanner::transformPointCloudToVehicleFrame(
   const pcl::PointCloud<pcl::PointXYZI>::Ptr& inputCloud,
   const pcl::PointCloud<pcl::PointXYZI>::Ptr& outputCloud,
   bool checkRangeAndZ,
-  bool clearOutput
-) const
+  bool clearOutput) const
 {
-  float sinVehicleYaw = std::sin(state_.yaw);
-  float cosVehicleYaw = std::cos(state_.yaw);
-
-  pcl::PointXYZI point;
+  float sinYaw = std::sin(state_.yaw);
+  float cosYaw = std::cos(state_.yaw);
 
   if (clearOutput) {
     outputCloud->clear();
   }
 
   for (const auto& pt : inputCloud->points) {
-    float pointX1 = pt.x - state_.x;
-    float pointY1 = pt.y - state_.y;
-    float pointZ1 = pt.z - state_.z;
+    float dx = pt.x - state_.x;
+    float dy = pt.y - state_.y;
+    float dz = pt.z - state_.z;
 
-    point.x = pointX1 * cosVehicleYaw + pointY1 * sinVehicleYaw;
-    point.y = -pointX1 * sinVehicleYaw + pointY1 * cosVehicleYaw;
-    point.z = pointZ1;
+    pcl::PointXYZI point;
+    point.x = dx * cosYaw + dy * sinYaw;
+    point.y = -dx * sinYaw + dy * cosYaw;
+    point.z = dz;
     point.intensity = pt.intensity;
 
+    float dis = std::hypot(point.x, point.y);
+
     if (checkRangeAndZ) {
-      float dis = std::hypot(point.x, point.y);
-      if (dis < config_.adjacentRange &&
-          ((point.z > config_.minRelZ && point.z < config_.maxRelZ) || config_.useTerrainAnalysis)) {
+      bool inRange = dis < config_.adjacentRange;
+      bool inZRange = (point.z > config_.minRelZ && point.z < config_.maxRelZ) || config_.useTerrainAnalysis;
+      if (inRange && inZRange) {
         outputCloud->push_back(point);
       }
     } else {
-      float dis = std::hypot(point.x, point.y);
       if (dis < config_.adjacentRange) {
         outputCloud->push_back(point);
       }
@@ -664,14 +541,8 @@ void LocalPlanner::transformPointCloudToVehicleFrame(
 void LocalPlanner::transformAndCropClouds()
 {
   clouds_.plannerCloudCrop->clear();
-
-  // 变换规划器点云 (clear and fill)
   transformPointCloudToVehicleFrame(clouds_.plannerCloud, clouds_.plannerCloudCrop, true, true);
-
-  // 变换边界点云 (append without clearing)
   transformPointCloudToVehicleFrame(clouds_.boundaryCloud, clouds_.plannerCloudCrop, false, false);
-
-  // 变换障碍物点云 (append without clearing)
   transformPointCloudToVehicleFrame(clouds_.addedObstacles, clouds_.plannerCloudCrop, false, false);
 }
 
@@ -712,20 +583,15 @@ void LocalPlanner::updateTargetFromGoal()
     // Calculate target direction
     state_.targetDirection = normalizeAngle(static_cast<float>(std::atan2(relY, relX) * 180.0 / PI));
 
-    // DEBUG: Log target direction calculation
-    static int debugCount = 0;
-    if (debugCount < 3) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG updateTargetFromGoal #%d: goalX=%.2f, goalY=%.2f, stateX=%.2f, stateY=%.2f, yaw=%.2f, relX=%.2f, relY=%.2f, targetDirection=%.2f",
-        debugCount, config_.goalX, config_.goalY, state_.x, state_.y, state_.yaw, relX, relY, state_.targetDirection);
-      debugCount++;
-    }
+    RCLCPP_DEBUG(this->get_logger(), "updateTargetFromGoal: goalX=%.2f, goalY=%.2f, relX=%.2f, relY=%.2f, targetDirection=%.2f",
+                 config_.goalX, config_.goalY, relX, relY, state_.targetDirection);
 
     // If not two-way drive, limit to forward range
     if (!config_.twoWayDrive) {
       state_.targetDirection = std::clamp(state_.targetDirection, -90.0f, 90.0f);
     }
 
-    // Use full speed (no joystick scaling)
+    // Use full maxSpeed
     state_.normalizedSpeed = 1.0f;
   } else {
     state_.normalizedSpeed = 0.0f;
@@ -756,8 +622,8 @@ void LocalPlanner::updatePathScaleAndRange(float& pathScale, float& pathRange)
 float LocalPlanner::computeAngleDifference(float angle1, float angle2) const
 {
   float diff = std::fabs(angle1 - angle2);
-  if (diff > PathData::kMaxAngleDegrees) {
-    diff = PathData::kFullCircleDegrees - diff;
+  if (diff > constants::kMaxAngleDegrees) {
+    diff = constants::kFullCircleDegrees - diff;
   }
   return diff;
 }
@@ -771,17 +637,31 @@ float LocalPlanner::normalizeAngle(float angle) const
 
 bool LocalPlanner::isDirectionValid(int rotDir) const
 {
+  // Convert rotation direction index to angle (-180 to 170 degrees)
   float rotAngRaw = 10.0f * rotDir - 180.0f;
+  
+  // Calculate angular difference between target and this rotation direction
   float angDiff = std::fabs(state_.targetDirection - rotAngRaw);
   if (angDiff > 180.0f) {
     angDiff = 360.0f - angDiff;
   }
 
-  return !((angDiff > config_.dirThre && !config_.dirToVehicle) ||
-           (std::fabs(rotAngRaw) > config_.dirThre &&
-            std::fabs(state_.targetDirection) <= 90.0f && config_.dirToVehicle) ||
-           ((rotAngRaw > config_.dirThre && 360.0f - rotAngRaw > config_.dirThre) &&
-            std::fabs(state_.targetDirection) > 90.0f && config_.dirToVehicle));
+  // Mode 1: Direction filtering relative to goal
+  // Check if direction is within threshold of target direction
+  if (!config_.dirToVehicle) {
+    return angDiff <= config_.dirThre;
+  }
+  
+  // Mode 2: Direction filtering relative to vehicle
+  // For forward-facing targets (within ±90°), allow forward-ish rotations
+  if (std::fabs(state_.targetDirection) <= 90.0f) {
+    return std::fabs(rotAngRaw) <= config_.dirThre;
+  }
+  
+  // For backward-facing targets (beyond ±90°), allow backward-ish rotations
+  // Check if rotation is in backward range (beyond dirThre from both ends)
+  bool isBackwardRotation = (rotAngRaw < -config_.dirThre) || (rotAngRaw > config_.dirThre);
+  return isBackwardRotation;
 }
 
 bool LocalPlanner::isRotationValid(float rotAng, float rotDeg, float minObsAngCW, float minObsAngCCW) const
@@ -818,7 +698,7 @@ void LocalPlanner::calculateRelativeGoal(
   }
 
   // Use target direction from state (computed by updateTargetFromGoal)
-  if (config_.autonomyMode && state_.hasValidGoal) {
+  if (state_.hasValidGoal) {
     desiredDirection = state_.targetDirection;
   }
 }
@@ -844,11 +724,6 @@ void LocalPlanner::checkPointAgainstPaths(
   float& minObsAngCCW
 )
 {
-  // DEBUG: Count calls
-  static int callCount = 0;
-  static int processCount = 0;
-  callCount++;
-
   // Scale point coordinates
   float x = point.x / pathScale;
   float y = point.y / pathScale;
@@ -861,12 +736,6 @@ void LocalPlanner::checkPointAgainstPaths(
 
   if (!withinRange || !withinGoalRange || !config_.checkObstacle) {
     return;
-  }
-
-  processCount++;
-  if (callCount <= 3) {
-    RCLCPP_INFO(this->get_logger(), "DEBUG checkPointAgainstPaths #%d: point(%.2f,%.2f,%.2f), h=%.2f, dis=%.2f, checkObstacle=%d, withinRange=%d, withinGoalRange=%d",
-      callCount, point.x, point.y, point.z, h, dis, config_.checkObstacle, withinRange, withinGoalRange);
   }
 
   // Check each rotation direction (exactly 36 as in original code)
@@ -905,19 +774,6 @@ void LocalPlanner::checkPointAgainstPaths(
     }
   }
 
-  // DEBUG: Count blocked paths after processing this point
-  static int debugPointCount = 0;
-  if (debugPointCount < 1) {
-    int blockedCount = 0;
-    for (int i = 0; i < 36 * PathData::pathNum; i++) {
-      if (pathData_.clearPathList[i] >= config_.pointPerPathThre) {
-        blockedCount++;
-      }
-    }
-    RCLCPP_INFO(this->get_logger(), "DEBUG: After processing 1st point, blocked paths: %d / %d", blockedCount, 36 * PathData::pathNum);
-    debugPointCount++;
-  }
-
   // Check for rotational obstacles
   float diameter = std::hypot(static_cast<float>(config_.vehicleLength) / 2.0f, static_cast<float>(config_.vehicleWidth) / 2.0f);
   float angOffset = std::atan2(config_.vehicleWidth, config_.vehicleLength) * 180.0f / PI;
@@ -943,7 +799,7 @@ void LocalPlanner::checkPointAgainstPaths(
 
 void LocalPlanner::scoreAllPaths(float desiredDir, float relativeGoalDis)
 {
-  // Score all paths and accumulate by group (exactly from original code)
+  // Score all paths and accumulate by group
   int validCount = 0;
   int blockedCount = 0;
   int directionInvalidCount = 0;
@@ -964,11 +820,11 @@ void LocalPlanner::scoreAllPaths(float desiredDir, float relativeGoalDis)
 
     validCount++;
 
-    // Calculate penalty score (from original code)
+    // Calculate penalty score based on terrain cost
     float penaltyScore = 1.0f - pathData_.pathPenaltyList[i] / static_cast<float>(config_.costHeightThre);
     if (penaltyScore < config_.costScore) penaltyScore = static_cast<float>(config_.costScore);
 
-    // Calculate direction difference (from original code)
+    // Calculate direction difference (normalized to 0-180 degrees)
     float dirDiff = std::fabs(state_.targetDirection - pathData_.endDirPathList[i % PathData::pathNum] - (10.0f * rotDir - 180.0f));
     if (dirDiff > 360.0f) {
       dirDiff -= 360.0f;
@@ -976,38 +832,42 @@ void LocalPlanner::scoreAllPaths(float desiredDir, float relativeGoalDis)
     if (dirDiff > 180.0f) {
       dirDiff = 360.0f - dirDiff;
     }
+    
+    // Normalize direction difference to [0, 1]
+    float normalizedDirDiff = dirDiff / 180.0f;
 
-    // Calculate rotation direction weight (from original code)
+    // Calculate rotation direction weight (prefer forward directions)
+    // Reduced from power of 4 to power of 2 for less extreme weighting
     float rotDirW;
     if (rotDir < 18) rotDirW = std::fabs(std::fabs(rotDir - 9.0f) + 1.0f);
     else rotDirW = std::fabs(std::fabs(rotDir - 27.0f) + 1.0f);
 
-    // Calculate group direction weight (from original code)
+    // Calculate group direction weight (prefer straighter paths)
     float groupDirW = 4.0f - std::fabs(pathData_.pathList[i % PathData::pathNum] - 3.0f);
 
-    // Calculate final score (from original code)
-    float score = (1.0f - std::sqrt(std::sqrt(config_.dirWeight * dirDiff))) *
-                  rotDirW * rotDirW * rotDirW * rotDirW * penaltyScore;
+    // Calculate direction score component with improved weighting
+    // Using normalized difference and reduced sqrt nesting
+    float dirScore = 1.0f - std::sqrt(config_.dirWeight * normalizedDirDiff);
+    dirScore = std::max(0.0f, dirScore);  // Ensure non-negative
 
-    // Adjust for goal proximity (from original code)
+    // Calculate final score with reduced rotDirW power (2 instead of 4)
+    // This makes path selection less extreme and more balanced
+    float score = dirScore * rotDirW * rotDirW * penaltyScore;
+
+    // Adjust for goal proximity - use group weight instead of rotation weight
     if (relativeGoalDis < config_.goalCloseDis) {
-      score = (1.0f - std::sqrt(std::sqrt(config_.dirWeight * dirDiff))) *
-              groupDirW * groupDirW * penaltyScore;
+      score = dirScore * groupDirW * groupDirW * penaltyScore;
     }
 
-    // Accumulate by group (from original code)
+    // Accumulate by group
     if (score > 0.0f) {
       pathData_.clearPathPerGroupScore[PathData::groupNum * rotDir + pathData_.pathList[i % PathData::pathNum]] += score;
     }
   }
 
-  // DEBUG: Log scoring statistics
-  static bool scoreDebugLogged = false;
-  if (!scoreDebugLogged) {
-    RCLCPP_INFO(this->get_logger(), "DEBUG scoreAllPaths: total=%d, directionInvalid=%d, blocked=%d, valid=%d",
-      36 * PathData::pathNum, directionInvalidCount, blockedCount, validCount);
-    scoreDebugLogged = true;
-  }
+  // Log scoring statistics (debug level)
+  RCLCPP_DEBUG(this->get_logger(), "scoreAllPaths: total=%d, directionInvalid=%d, blocked=%d, valid=%d",
+    36 * PathData::pathNum, directionInvalidCount, blockedCount, validCount);
 }
 
 // ============================================================================
@@ -1050,7 +910,7 @@ bool LocalPlanner::generateSelectedPath(
 )
 {
   // Get rotation parameters
-  float rotAng = (PathData::kRotationDegreeIncrement * rotDir - 180.0f) * PI / 180.0f;
+  float rotAng = (constants::kRotationDegreeIncrement * rotDir - 180.0f) * PI / 180.0f;
 
   // Pre-allocate path poses (from original code line 870)
   int selectedPathLength = pathData_.startPaths[groupID]->points.size();
@@ -1159,7 +1019,7 @@ bool LocalPlanner::findPathWithMultiScaleSearch(nav_msgs::msg::Path& path)
   // Calculate path parameters - use full speed (normalizedSpeed = 1.0)
   float pathRange = static_cast<float>(config_.adjacentRange);
   if (config_.pathRangeBySpeed) {
-    pathRange *= 1.0f;  // Full speed, no joystick scaling
+    pathRange *= 1.0f;  // Use full speed
   }
   pathRange = std::max(pathRange, static_cast<float>(config_.minPathRange));
 
@@ -1167,15 +1027,35 @@ bool LocalPlanner::findPathWithMultiScaleSearch(nav_msgs::msg::Path& path)
   float pathScale = static_cast<float>(config_.pathScale);
   float defPathScale = pathScale;
   if (config_.pathScaleBySpeed) {
-    pathScale *= 1.0f;  // Full speed, no joystick scaling
+    pathScale *= 1.0f;  // Use full speed
   }
   pathScale = std::max(pathScale, static_cast<float>(config_.minPathScale));
 
   bool pathFound = false;
   float relativeGoalDis;
+  
+  // Store parameters for visualization (use last successful search if no path found)
+  float visPathScale = pathScale;
+  float visPathRange = pathRange;
+  float visRelativeGoalDis = 0.0f;
+  float visMinObsAngCW = -180.0f;
+  float visMinObsAngCCW = 180.0f;
+  
+  // Track best result across all scales for fallback
+  float bestMaxScore = 0.0f;
+  int bestSelectedGroupInd = -1;
+  float bestPathScale = pathScale;
+  float bestPathRange = pathRange;
+  float bestRelativeGoalDis = 0.0f;
+  
+  // Threshold for early exit - if we find a path with score above this, stop searching
+  constexpr float GOOD_SCORE_THRESHOLD = 0.8f;
 
   // Multi-scale search loop
+  int searchIteration = 0;
   while (pathScale >= config_.minPathScale && pathRange >= config_.minPathRange) {
+    searchIteration++;
+    
     // RECALCULATE relative goal distance INSIDE the loop (to account for robot movement)
     float sinYaw = std::sin(state_.yaw);
     float cosYaw = std::cos(state_.yaw);
@@ -1183,30 +1063,22 @@ bool LocalPlanner::findPathWithMultiScaleSearch(nav_msgs::msg::Path& path)
     float relGoalY = static_cast<float>(-(config_.goalX - state_.x) * sinYaw + (config_.goalY - state_.y) * cosYaw);
     relativeGoalDis = std::hypot(relGoalX, relGoalY);
 
-    // Calculate joyDir from goal (inside loop to use current robot position)
-    float joyDir = std::atan2(relGoalY, relGoalX) * 180.0f / PI;
+    // Calculate direction to goal (inside loop to use current robot position)
+    float goalDirection = std::atan2(relGoalY, relGoalX) * 180.0f / PI;
 
     // Apply two-way drive constraints
     if (!config_.twoWayDrive) {
-      joyDir = std::clamp(joyDir, -90.0f, 90.0f);
+      goalDirection = std::clamp(goalDirection, -90.0f, 90.0f);
     }
 
     // Update state target direction for scoring
-    state_.targetDirection = normalizeAngle(joyDir);
+    state_.targetDirection = normalizeAngle(goalDirection);
 
     // Initialize scoring arrays
     initializeScoringArrays();
 
     // Detect obstacles
     float minObsAngCW = -180.0f, minObsAngCCW = 180.0f;
-
-    // DEBUG: Log point cloud size
-    static bool firstLoop = true;
-    if (firstLoop) {
-      RCLCPP_INFO(this->get_logger(), "DEBUG findPath: plannerCloudCrop size=%zu, checkObstacle=%d",
-        clouds_.plannerCloudCrop->points.size(), config_.checkObstacle);
-      firstLoop = false;
-    }
 
     for (const auto& point : clouds_.plannerCloudCrop->points) {
       checkPointAgainstPaths(point, pathScale, pathRange, relativeGoalDis,
@@ -1218,11 +1090,27 @@ bool LocalPlanner::findPathWithMultiScaleSearch(nav_msgs::msg::Path& path)
     if (minObsAngCCW < 0.0f) minObsAngCCW = 0.0f;
 
     // Score all paths
-    scoreAllPaths(joyDir, relativeGoalDis);
+    scoreAllPaths(goalDirection, relativeGoalDis);
 
     // Select best path
     float maxScore;
     int selectedGroupInd = selectBestPathGroup(maxScore, minObsAngCW, minObsAngCCW);
+
+    // Save current search parameters for visualization
+    visPathScale = pathScale;
+    visPathRange = pathRange;
+    visRelativeGoalDis = relativeGoalDis;
+    visMinObsAngCW = minObsAngCW;
+    visMinObsAngCCW = minObsAngCCW;
+    
+    // Track best result across all iterations
+    if (maxScore > bestMaxScore) {
+      bestMaxScore = maxScore;
+      bestSelectedGroupInd = selectedGroupInd;
+      bestPathScale = pathScale;
+      bestPathRange = pathRange;
+      bestRelativeGoalDis = relativeGoalDis;
+    }
 
     if (selectedGroupInd >= 0 && maxScore > 0.0f) {
       // Extract group ID and rotation direction
@@ -1231,10 +1119,18 @@ bool LocalPlanner::findPathWithMultiScaleSearch(nav_msgs::msg::Path& path)
 
       // Generate selected path
       if (generateSelectedPath(groupID, rotDir, pathScale, pathRange, relativeGoalDis, path)) {
-        generateFreePathsVisualization(pathScale, pathRange, relativeGoalDis,
-                                      minObsAngCW, minObsAngCCW);
         pathFound = true;
-        break;
+        RCLCPP_DEBUG(this->get_logger(), "Path found at iteration %d with score %.3f (scale: %.2f, range: %.2f)",
+                     searchIteration, maxScore, pathScale, pathRange);
+        
+        // Early exit if we found a high-quality path
+        if (maxScore >= GOOD_SCORE_THRESHOLD) {
+          RCLCPP_DEBUG(this->get_logger(), "Early exit: found high-quality path (score >= %.2f)", GOOD_SCORE_THRESHOLD);
+          break;
+        }
+        
+        // Continue searching for better paths at smaller scales
+        // but we already have a valid path
       }
     }
 
@@ -1246,6 +1142,24 @@ bool LocalPlanner::findPathWithMultiScaleSearch(nav_msgs::msg::Path& path)
       pathRange -= static_cast<float>(config_.pathRangeStep);
     }
   }
+  
+  // If no path was found but we have a best candidate, try to use it
+  if (!pathFound && bestSelectedGroupInd >= 0 && bestMaxScore > 0.0f) {
+    int groupID = bestSelectedGroupInd % PathData::groupNum;
+    int rotDir = bestSelectedGroupInd / PathData::groupNum;
+    
+    RCLCPP_DEBUG(this->get_logger(), "Using fallback path with score %.3f (scale: %.2f, range: %.2f)",
+                 bestMaxScore, bestPathScale, bestPathRange);
+    
+    if (generateSelectedPath(groupID, rotDir, bestPathScale, bestPathRange, bestRelativeGoalDis, path)) {
+      pathFound = true;
+    }
+  }
+
+  // Always update free_paths visualization with the last search parameters
+  // This ensures visualization is always up-to-date, even when no path is found
+  generateFreePathsVisualization(visPathScale, visPathRange, visRelativeGoalDis,
+                                visMinObsAngCW, visMinObsAngCCW);
 
   return pathFound;
 }
@@ -1275,10 +1189,8 @@ void LocalPlanner::generateZeroLengthPath(nav_msgs::msg::Path& path)
   path.header.stamp = rclcpp::Time(static_cast<uint64_t>(state_.odomTime * 1e9));
   path.header.frame_id = "vehicle";
 
-  // Clear free_paths when no path is found (exactly from original code lines 968-974)
-#if PLOTPATHSET == 1
-  pathData_.freePaths->clear();
-#endif
+  // Note: free_paths is now updated in findPathWithMultiScaleSearch()
+  // regardless of whether a path is found, so we don't clear it here
 }
 
 }  // namespace local_planner
