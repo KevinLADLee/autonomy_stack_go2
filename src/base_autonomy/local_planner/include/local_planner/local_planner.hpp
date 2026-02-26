@@ -227,6 +227,10 @@ private:
   PointCloudData clouds_;
   PathData pathData_;
 
+  /** True only after at least one /goal_pose message has been received.
+   *  Prevents launch params goalX=0, goalY=0 from being treated as a valid goal at startup. */
+  bool goal_received_from_topic_ = false;
+
   // ROS2 subscribers
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odometry_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_laser_cloud_;

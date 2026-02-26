@@ -381,6 +381,7 @@ void LocalPlanner::terrainCloudCallback(const sensor_msgs::msg::PointCloud2::Sha
 
 void LocalPlanner::goalPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
+  goal_received_from_topic_ = true;
   config_.goalX = msg->pose.position.x;
   config_.goalY = msg->pose.position.y;
   updateTargetFromGoal();
@@ -576,9 +577,9 @@ void LocalPlanner::updateTargetFromGoal()
   float relY = static_cast<float>(-(config_.goalX - state_.x) * sinYaw + (config_.goalY - state_.y) * cosYaw);
   float distance = std::hypot(relX, relY);
 
-  // Update goal validity - use goalCloseDis instead of hardcoded threshold
-  // This ensures consistency with path follower's goal reaching logic
-  state_.hasValidGoal = (distance > config_.goalCloseDis * 0.5f);
+  // Update goal validity - only valid after user has sent a goal via /goal_pose (avoids
+  // launch params goalX=0, goalY=0 being treated as a valid goal and causing auto-motion at startup)
+  state_.hasValidGoal = goal_received_from_topic_ && (distance > config_.goalCloseDis * 0.5f);
 
   if (state_.hasValidGoal) {
     // Calculate target direction

@@ -33,10 +33,11 @@ typedef union
 /**
  * @class Go2CmdVelRepub
  * @brief ROS2 node that republishes cmd_vel commands to Go2 sport API
- * 
- * This node subscribes to /cmd_vel and forwards velocity commands to the Go2 robot.
- * It includes a protection mode that can be toggled by pressing L1+R1 on the wireless controller.
- * In protection mode, the robot enters Balance Stand to prevent falling.
+ *
+ * Default: manual mode (sport API does not forward /cmd_vel). Robot is controlled only
+ * by the wireless controller. Press L1+R1 to enable auto navigation (sport API forwards
+ * /cmd_vel). Press L1+R1 again to return to manual mode. This ensures safe startup
+ * without autonomous motion.
  */
 class Go2CmdVelRepub : public rclcpp::Node
 {
@@ -50,7 +51,7 @@ public:
         , vx_(0.0)
         , vy_(0.0)
         , vyaw_(0.0)
-        , enable_vel_cmd_(true)  // Default: enabled
+        , enable_vel_cmd_(false)  // Default: manual mode (no auto nav until L1+R1)
         , last_L1_R1_state_(false)
     {
         // Create subscriber for wireless controller
@@ -60,16 +61,17 @@ public:
 
         // Create subscriber for cmd_vel
         vel_cmd_suber_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/cmd_vel", 10, 
+            "/cmd_vel", 10,
             std::bind(&Go2CmdVelRepub::vel_cmd_callback, this, std::placeholders::_1));
 
         unitree_api::msg::Request req;
 
         sport_client_.ClassicWalk(req, true);
-        
-        RCLCPP_INFO(this->get_logger(), "Node initialized. Protection mode: %s", 
-                    enable_vel_cmd_ ? "OFF" : "ON");
-        RCLCPP_INFO(this->get_logger(), "Press L1+R1 to toggle protection mode");
+        // Start in manual: one StopMove so no residual velocity command from autonomy
+        sport_client_.StopMove(req);
+
+        RCLCPP_INFO(this->get_logger(), "Default: manual mode (sport API not forwarding /cmd_vel)");
+        RCLCPP_INFO(this->get_logger(), "Press L1+R1 to enable auto navigation; L1+R1 again to return to manual");
     }
 
 
@@ -89,38 +91,35 @@ private:
 
     /**
      * @brief Callback function for wireless controller data from ROS2 topic
-     * Handles L1+R1 toggle logic for protection mode
+     * L1+R1 toggles between manual (sport API off) and auto navigation (sport API forwards /cmd_vel).
      */
     void wireless_controller_callback(const unitree_go::msg::WirelessController::SharedPtr msg)
     {
         try {
             xKeySwitchUnion keys;
             keys.value = msg->keys;
-            
-            // Parse keys field to check L1 and R1 buttons
-            // According to unitree documentation:
-            // R1 is bit 0 (0x0001)
-            // L1 is bit 1 (0x0002)
+
+            // R1 is bit 0 (0x0001), L1 is bit 1 (0x0002)
             bool L1_pressed = (keys.components.L1) != 0;
             bool R1_pressed = (keys.components.R1) != 0;
             bool L1_R1_both = L1_pressed && R1_pressed;
-            
-            // Toggle logic: detect transition from not-pressed to pressed
+
+            // Toggle on L1+R1 press: manual <-> auto navigation
             if (L1_R1_both && !last_L1_R1_state_) {
-                // Toggle protection mode
                 enable_vel_cmd_ = !enable_vel_cmd_;
                 if (enable_vel_cmd_) {
-                    RCLCPP_INFO(this->get_logger(), "Protection mode OFF - Resuming velocity control");
+                    RCLCPP_INFO(this->get_logger(), "Auto navigation ON - Sport API forwarding /cmd_vel");
+                    publish_command();
                 } else {
-                    RCLCPP_INFO(this->get_logger(), "Protection mode ON - Entering Balance Stand");
+                    RCLCPP_INFO(this->get_logger(), "Manual mode ON - Sport API stopped (wireless controller only)");
                     vx_ = 0.0;
                     vy_ = 0.0;
                     vyaw_ = 0.0;
+                    unitree_api::msg::Request req;
+                    sport_client_.StopMove(req);
                 }
-                // Immediately send command to reduce latency
-                publish_command();
             }
-            
+
             last_L1_R1_state_ = L1_R1_both;
         } catch (const std::exception& e) {
             RCLCPP_WARN(this->get_logger(), "Error processing wireless controller callback: %s", e.what());
@@ -133,21 +132,16 @@ private:
      */
     void publish_command()
     {
+        if (!enable_vel_cmd_) {
+            // Manual mode: do not send anything (sport API off, robot under wireless control)
+            return;
+        }
         try {
             unitree_api::msg::Request req;
-
-            if (enable_vel_cmd_) {
-                // Normal mode: forward cmd_vel commands
-                if (vx_ == 0.0 && vy_ == 0.0 && vyaw_ == 0.0) {
-                    sport_client_.StopMove(req);
-                } else {
-                    sport_client_.Move(req, vx_, vy_, vyaw_);
-                }
-            } else {
-                // Protection mode: send StopMove then BalanceStand
-                // This makes the robot stop and enter balance stand safely
+            if (vx_ == 0.0 && vy_ == 0.0 && vyaw_ == 0.0) {
                 sport_client_.StopMove(req);
-                sport_client_.BalanceStand(req);
+            } else {
+                sport_client_.Move(req, vx_, vy_, vyaw_);
             }
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Error sending sport command: %s", e.what());
@@ -166,7 +160,7 @@ private:
     float vy_;
     float vyaw_;
 
-    // Protection mode control
+    // When true: sport API forwards /cmd_vel (auto nav). When false: manual mode (wireless controller only).
     bool enable_vel_cmd_;
     bool last_L1_R1_state_;
 };

@@ -3,9 +3,10 @@ register_keys:
   # ATTENTION: usb 3.0 is always recommended, as advance functionality like SLAM mode requires usb 3.0 for reliable map file transfer
   strict_usb3.0_check: 1  # 0: off: 1: on;
 
-  # 0: use odin internal system time as data time stamp as before, typical and recommanded;
-  # 1: use host ros time (upon recieve) as data time stamp, only use if you specifically require this setup, not recommanded for most user
-  use_host_ros_time: 1
+  # 0: use odin internal system time as data time stamp, typical and recommended;
+  # 1: use host ros time (upon receive) as data time stamp, only use if you specifically require this setup, not recommended for most users
+  # 2: align odin1 time to host time, timestamp is the sensor data reception time on host time axis
+  use_host_ros_time: 2
 
   streamctrl: 1           # 0: off; 1: on
 
@@ -32,19 +33,29 @@ register_keys:
   send_odom_baselink_tf: 1 # 0: off; 1: on.
 
   # raw dtof data
-  senddtof: 0             # 0: off; 1: on
+  senddtof: 1             # 0: off; 1: on
+  cloud_raw_confidence_threshold: 35 # please refer to readme for more details
+  
+  # dtof sensor frame rate. Supported values: 100 (10fps) or 145 (14.5fps)
+  # Higher frame rate provides smoother point cloud data but may increase data bandwidth
+  # Note: value is multiplied by 10 (e.g., 145 means 14.5fps)
+  dtof_fps: 100           # 100: 10fps; 145: 14.5fps
 
   # slam cloud data
   sendcloudslam: 1        # 0: off; 1: on
 
   # processed with raw point cloud, rgb image, and calib.yaml from device
   # Processed on host device
-  sendcloudrender: 1      # 0: off; 1: on
+  sendcloudrender: 0      # 0: off; 1: on
 
   # depth completion demo, high computing resource usage. 
   # for more information please refer to the readme file.
   # Processed on host device
   senddepth: 0            # 0: off; 1: on
+
+  # cloud reprojection demo, projects cloud_slam to camera image using odometry
+  # Processed on host device
+  sendreprojection: 0    # 0: off; 1: on
 
   # record rgb, odometry, and slam cloud data as proprietary olx format for further processing in MindCloud(TM) software. 
   # save path: ws/src/odin_ros_driver/recorddata/{record_start_time}/
@@ -62,9 +73,10 @@ register_keys:
   showpath: 1             # 0: off; 1: on
   showcamerapose: 0       # 0: off; 1: on
   
-  custom_save_map: 1
-  custom_map_mode: 1      # 0: Odometry mode 1: SLAM mode 2: Relocalization mode
+  custom_map_mode: 0      # 0: Odometry mode 1: SLAM mode 2: Relocalization mode
   custom_init_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
   relocalization_map_abs_path: "" # must be set for Relocalization mode or will fail
-  mapping_result_dest_dir: "" # "": use default value; other: use custom value
-  mapping_result_file_name: "" # "": use default value; other: use custom value 
+
+  # To get the mapping result file, please use the set_param.sh script provided: "./set_param.sh save_map 1"
+  mapping_result_dest_dir: "/home/nv/autonomy_stack_go2/src/utilities/odin_maps" # "": if not specified, save to default location of {ws}/src/odin_ros_driver/map/{driver_start_time}/
+  mapping_result_file_name: "" # "": if not specified, save to location above with default file name of map_{map_save_time}.bin

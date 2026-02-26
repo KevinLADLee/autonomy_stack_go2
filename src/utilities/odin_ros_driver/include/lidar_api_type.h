@@ -56,7 +56,8 @@ typedef enum {
     LIDAR_DT_DEV_STATUS,
     LIDAR_DT_SLAM_ODOMETRY_HIGHFREQ,
     LIDAR_DT_SLAM_ODOMETRY_TF,
-    LIDAR_DT_SLAM_WIWC
+    LIDAR_DT_SLAM_WIWC,
+    LIDAR_DT_NTP
 } lidar_data_type_e;
 
 typedef struct {
@@ -92,7 +93,8 @@ typedef struct {
     int64_t orient[4];
     int64_t linear_velocity[3];
     int64_t angular_velocity[3];
-    int64_t cov[3 * 3 * 2];
+    double pose_cov[36];
+    double twist_cov[36];
 } ros_odom_convert_complete_t;
 
 typedef struct {
@@ -116,6 +118,11 @@ typedef struct {
     uint32_t height;
 } buffer_List_t;
 
+typedef struct {
+    double delay;
+    double offset;
+} ptp_sync_data_t;
+
 typedef struct capture_Image_List_t {
     uint32_t imageCount;
     buffer_List_t imageList[DEVICE_MAX_CH_NUMBER];
@@ -135,12 +142,18 @@ typedef struct {
 } lidar_data_callback_info_t;
 
 typedef struct {
-    char mcu_version[64];
-    char sys_version[64];
-    char slam_version[64];
-    char dev_app_version[64];
-    char host_app_version[64];
-} lidar_version_t;
+    int major;
+    int minor;
+    int patch;
+}lidar_version_t;
+
+typedef struct {
+    lidar_version_t kernel_version;
+    lidar_version_t mcu_version;
+    lidar_version_t soc_version;
+    lidar_version_t Daemon_proc_version;
+    lidar_version_t slam_version;
+} lidar_fireware_version_t;
 
 /**
  * @brief RGB image sensor frame rate
@@ -212,6 +225,15 @@ typedef enum {
     LIDAR_DEVICE_STREAMING,
     LIDAR_DEVICE_STREAM_STOPPED,
 } lidar_device_initial_state_e;
+
+typedef enum {
+    LIDAR_DEPTH_ODR_10HZ = 0,
+    LIDAR_DEPTH_ODR_14_5HZ,
+} lidar_depth_odr_e;
+
+typedef struct {
+    lidar_depth_odr_e odr;
+} lidar_depth_para_t;
 
 #ifdef __cplusplus
 }

@@ -46,8 +46,10 @@ limitations under the License.
     #include <ros/package.h>
     #include <ros/ros.h> 
 #endif
-#define ros_driver_version "0.7.1"
-#define recommended_firmware_version "0.8.0"
+#define ros_driver_version "0.9.0"
+#define required_firmware_version_major 0
+#define required_firmware_version_minor 10
+#define required_firmware_version_patch 0
 
 // Global variable declarations
 static device_handle odinDevice = nullptr;
@@ -83,6 +85,21 @@ static std::shared_ptr<rawCloudRender> g_renderer = nullptr;
 std::string calib_file_ = "";
 static std::shared_ptr<odin_ros_driver::YamlParser> g_parser = nullptr;
 
+static constexpr size_t PTP_SMOOTH_WINDOW_SIZE = 30;
+static std::mutex g_ptp_mutex;
+static std::deque<double> g_ptp_delay_buf;
+static std::deque<double> g_ptp_offset_buf;
+static std::atomic<double> g_ptp_delay_smooth{0.0};
+static std::atomic<double> g_ptp_offset_smooth{0.0};
+
+double get_ptp_smoothed_delay() {
+    return g_ptp_delay_smooth.load(std::memory_order_relaxed);
+}
+
+double get_ptp_smoothed_offset() {
+    return g_ptp_offset_smooth.load(std::memory_order_relaxed);
+}
+
  // usb device
 static std::string TARGET_VENDOR = "2207";
 static std::string TARGET_PRODUCT = "0019";
@@ -104,9 +121,12 @@ int g_show_camerapose = 0;
 int g_strict_usb3_0_check = 0;
 int g_use_host_ros_time = 0;
 int g_save_log = 0;
+int g_cloud_raw_confidence_threshold = 35;
+int g_dtof_fps = 145;  // DTOF sensor frame rate: 100 (10fps) or 145 (14.5fps)
 
 std::filesystem::path log_root_dir_;
 int g_custom_map_mode = 0;
+bool g_relocalization_success_msg_printed = false;
 
 std::string g_relocalization_map_abs_path = "";
 std::string g_mapping_result_dest_dir = "";
@@ -175,15 +195,7 @@ class RosNodeControlImpl : public RosNodeControlInterface {
         int getDtofSubframeODR() const override {
             return dtof_subframe_interval_time;
         }
-
-        void setUseHostRosTime(bool use_host_ros_time) override {
-            pub_use_host_ros_time = use_host_ros_time;
-        }
-
-        bool useHostRosTime() const override {
-            return pub_use_host_ros_time;
-        }
-    
+        
         void setSendOdomBaseLinkTF(bool send_odom_baselink_tf) override {
             pub_odom_baselink_tf = send_odom_baselink_tf;
         }
@@ -192,10 +204,17 @@ class RosNodeControlImpl : public RosNodeControlInterface {
             return pub_odom_baselink_tf;
         }
 
+        void setCloudRawConfidenceThreshold(int threshold) {
+            cloud_raw_confidence_threshold = threshold;
+        }
+        int cloudRawConfidenceThreshold() const {
+            return cloud_raw_confidence_threshold;
+        }
     private:
         int dtof_subframe_interval_time = 0;
         bool pub_use_host_ros_time = false;
         bool pub_odom_baselink_tf = false;
+        int cloud_raw_confidence_threshold = 35;
     };
     
 static RosNodeControlImpl g_rosNodeControlImpl;
@@ -375,9 +394,9 @@ static void custom_parameter_monitor() {
                             #endif
                         } else if (ret == 0) {
                             #ifdef ROS2
-                                RCLCPP_INFO(rclcpp::get_logger("param_monitor"), "map get success");
+                                RCLCPP_INFO(rclcpp::get_logger("param_monitor"), "map get start success, now transfering...");
                             #else
-                                ROS_INFO("map get success");
+                                ROS_INFO("map get start success, now transfering...");
                             #endif
                         } else {
                             #ifdef ROS2
@@ -389,10 +408,15 @@ static void custom_parameter_monitor() {
                     }
                     last_save_map_val = value;
 
+                } else if (result == -2) {
+                    #ifdef ROS2
+                        RCLCPP_INFO(rclcpp::get_logger("param_monitor"),"file transfering, try again later...");
+                    #else
+                        ROS_INFO("file transfering, try again later...");
+                    #endif
                 } else {
                     #ifdef ROS2
-                        RCLCPP_WARN(rclcpp::get_logger("param_monitor"),
-                                   "Failed to get save_map parameter, error: %d", result);
+                        RCLCPP_WARN(rclcpp::get_logger("param_monitor"),"Failed to get save_map parameter, error: %d", result);
                     #else
                         ROS_WARN("Failed to get save_map parameter, error: %d", result);
                     #endif
@@ -962,12 +986,61 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
             {
                 if (g_custom_map_mode == 2) {
                     g_ros_object->publishOdometry((capture_Image_List_t *)&data->stream, OdometryType::TRANSFORM, false, false);
+                    if (!g_relocalization_success_msg_printed) {
+                    #ifdef ROS2
+                        RCLCPP_INFO(rclcpp::get_logger("odom"), "relocalization success!");
+                    #else
+                        ROS_INFO("relocalization success!");
+                    #endif
+                        g_relocalization_success_msg_printed = true;
+                    }
                 }
             }
             break;
             case LIDAR_DT_SLAM_WIWC:
             {
-                //...
+                if(g_record_data ) {
+                    g_ros_object->recordrotate((capture_Image_List_t *)&data->stream);
+                }
+            }
+            break;
+            case LIDAR_DT_NTP:
+            {
+                uint32_t data_len = data->stream.imageList[0].length;
+                if (data_len == sizeof(ptp_sync_data_t)) {
+                    ptp_sync_data_t* ptp_data = (ptp_sync_data_t*)data->stream.imageList[0].pAddr;
+                    {
+                        std::lock_guard<std::mutex> lock(g_ptp_mutex);
+                        g_ptp_delay_buf.push_back(ptp_data->delay);
+                        g_ptp_offset_buf.push_back(ptp_data->offset);
+
+                        if (g_ptp_delay_buf.size() > PTP_SMOOTH_WINDOW_SIZE) {
+                            g_ptp_delay_buf.pop_front();
+                        }
+                        if (g_ptp_offset_buf.size() > PTP_SMOOTH_WINDOW_SIZE) {
+                            g_ptp_offset_buf.pop_front();
+                        }
+
+                        double delay_sum = 0.0;
+                        for (double v : g_ptp_delay_buf) delay_sum += v;
+                        double offset_sum = 0.0;
+                        for (double v : g_ptp_offset_buf) offset_sum += v;
+
+                        if (!g_ptp_delay_buf.empty()) {
+                            g_ptp_delay_smooth.store(delay_sum / static_cast<double>(g_ptp_delay_buf.size()), std::memory_order_relaxed);
+                        }
+                        if (!g_ptp_offset_buf.empty()) {
+                            g_ptp_offset_smooth.store(offset_sum / static_cast<double>(g_ptp_offset_buf.size()), std::memory_order_relaxed);
+                        }
+                    }
+
+                    // std::cout << std::setprecision(16)
+                    //           << "PTP delay: " << ptp_data->delay
+                    //           << " offset:" << ptp_data->offset
+                    //           << " smooth_delay:" << get_ptp_smoothed_delay()
+                    //           << " smooth_offset:" << get_ptp_smoothed_offset()
+                    //           << std::endl;
+                }
             }
             break;
         default:
@@ -1097,18 +1170,46 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             return;
         }
         
-        if(lidar_get_version(odinDevice)) {
+        lidar_fireware_version_t version;
+        if(lidar_get_version(odinDevice,&version)) {
             #ifdef ROS2
                 RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to get device firmware version, potential incompatible, please upgrade device firmware and retry.");
             #else
                 ROS_ERROR("Failed to get device firmware version, potential incompatible, please upgrade device firmware and retry.");
             #endif
             system("pkill -f rviz");
+            system("pkill -f host_sdk_sample");
             exit(1);
         }
         else {
-            printf("ros_driver_version:%s, recommended_firmware_version:%s\n", ros_driver_version, recommended_firmware_version);
-            printf("get version success.\n");
+            #ifdef ROS2
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "ros_driver_version:%s, recommended_firmware_version:%d.%d.%d", ros_driver_version, required_firmware_version_major, required_firmware_version_minor, required_firmware_version_patch);
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "get version success.");
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "kernel_version: V%d.%d.%d",version.kernel_version.major,version.kernel_version.minor,version.kernel_version.patch);
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "mcu_version: V%d.%d.%d",version.mcu_version.major,version.mcu_version.minor,version.mcu_version.patch);
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "soc_version: V%d.%d.%d",version.soc_version.major,version.soc_version.minor,version.soc_version.patch);
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "Daemon_proc_version: V%d.%d.%d",version.Daemon_proc_version.major,version.Daemon_proc_version.minor,version.Daemon_proc_version.patch);
+                RCLCPP_INFO(rclcpp::get_logger(__func__), "slam_version: V%d.%d.%d",version.slam_version.major,version.slam_version.minor,version.slam_version.patch);
+            #else
+                ROS_INFO("ros_driver_version:%s, recommended_firmware_version:%d.%d.%d", ros_driver_version, required_firmware_version_major, required_firmware_version_minor, required_firmware_version_patch);
+                ROS_INFO("get version success.");
+                ROS_INFO("kernel_version: V%d.%d.%d",version.kernel_version.major,version.kernel_version.minor,version.kernel_version.patch);
+                ROS_INFO("mcu_version: V%d.%d.%d",version.mcu_version.major,version.mcu_version.minor,version.mcu_version.patch);
+                ROS_INFO("soc_version: V%d.%d.%d",version.soc_version.major,version.soc_version.minor,version.soc_version.patch);
+                ROS_INFO("Daemon_proc_version: V%d.%d.%d",version.Daemon_proc_version.major,version.Daemon_proc_version.minor,version.Daemon_proc_version.patch);
+                ROS_INFO("slam_version: V%d.%d.%d",version.slam_version.major,version.slam_version.minor,version.slam_version.patch);
+            #endif
+
+            if (version.soc_version.major < required_firmware_version_major || (version.soc_version.minor < required_firmware_version_minor) || (version.soc_version.patch < required_firmware_version_patch)) {
+                #ifdef ROS2
+                    RCLCPP_ERROR(rclcpp::get_logger(__func__),"The soc version is too low, please upgrade the device firmware to at least %d.%d.%d\n",required_firmware_version_major,required_firmware_version_minor,required_firmware_version_patch);
+                #else
+                    ROS_ERROR("The soc version is too low, please upgrade the device firmware to at least %d.%d.%d\n",required_firmware_version_major,required_firmware_version_minor,required_firmware_version_patch);
+                #endif
+                system("pkill -f rviz");
+                system("pkill -f host_sdk_sample");
+                exit(1);
+            }
         }
 
         if (g_save_log) {
@@ -1246,6 +1347,44 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             #endif
         }
         
+
+        // Set DTOF sensor frame rate based on configuration
+        // Supported values: 100 (10fps) or 145 (14.5fps)
+        lidar_depth_para_t dtofpara;
+        if (g_dtof_fps == 100) {
+            dtofpara.odr = LIDAR_DEPTH_ODR_10HZ;
+        } else if (g_dtof_fps == 145) {
+            dtofpara.odr = LIDAR_DEPTH_ODR_14_5HZ;
+        } else {
+            // Default to 14.5Hz if invalid value
+            dtofpara.odr = LIDAR_DEPTH_ODR_14_5HZ;
+            #ifdef ROS2
+                RCLCPP_WARN(rclcpp::get_logger("ros[host_sdk_sample]"), 
+                    "Invalid dtof_fps value: %d, using default 14.5fps", g_dtof_fps);
+            #else
+                ROS_WARN("Invalid dtof_fps value: %d, using default 14.5fps", g_dtof_fps);
+            #endif
+        }
+        
+        if(lidar_set_depth_parameter(odinDevice, &dtofpara)) {
+            printf("set depth parameter failed.\n");
+            #ifdef ROS2
+                RCLCPP_WARN(rclcpp::get_logger("ros[host_sdk_sample]"), "set depth parameter failed");
+            #else
+                ROS_WARN("set depth parameter failed");
+            #endif
+            return;
+        }
+        
+        // Log the configured frame rate
+        #ifdef ROS2
+            RCLCPP_INFO(rclcpp::get_logger("ros[host_sdk_sample]"), 
+                "DTOF sensor frame rate set to %.1f fps", g_dtof_fps / 10.0);
+        #else
+            ROS_INFO("DTOF sensor frame rate set to %.1f fps", g_dtof_fps / 10.0);
+        #endif
+
+
         if (lidar_set_mode(odinDevice, type)) {
             #ifdef ROS2
                 RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Set mode failed");
@@ -1273,7 +1412,26 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             ROS_INFO("Custom map mode: %d", g_custom_map_mode);
         #endif
 
-        if (g_custom_map_mode == 2) {
+        if (g_custom_map_mode == 1) {
+            int save_map_init_value = 0;
+            int result = lidar_set_custom_parameter(odinDevice, "save_map", &save_map_init_value, sizeof(int));
+
+            if (result == 0) {
+                #ifdef ROS2
+                    RCLCPP_INFO(rclcpp::get_logger("command_processor"), 
+                            "Successfully initialized %s = %d", "save_map", save_map_init_value);
+                #else
+                    ROS_INFO("Successfully initialized %s = %d", "save_map", save_map_init_value);
+                #endif
+            } else {
+                #ifdef ROS2
+                    RCLCPP_ERROR(rclcpp::get_logger("command_processor"), 
+                                "Failed to initialize %s = %d, error: %d", "save_map", save_map_init_value, result);
+                #else
+                    ROS_ERROR("Failed to initialize %s = %d, error: %d", "save_map", save_map_init_value, result);
+                #endif
+            } 
+        } else if (g_custom_map_mode == 2) {
             if (g_relocalization_map_abs_path != "" && std::filesystem::exists(g_relocalization_map_abs_path) && 
                 lidar_set_relocalization_map(odinDevice, g_relocalization_map_abs_path.c_str()) == 0) {
                 #ifdef ROS2
@@ -1489,6 +1647,9 @@ int main(int argc, char *argv[])
         g_sendrgb       = get_key_value("sendrgb", 1);
         g_sendimu       = get_key_value("sendimu", 1);
         g_senddtof      = get_key_value("senddtof", 1);
+        g_cloud_raw_confidence_threshold = get_key_value("cloud_raw_confidence_threshold", 35);
+        g_rosNodeControlImpl.setCloudRawConfidenceThreshold(g_cloud_raw_confidence_threshold);
+        g_dtof_fps      = get_key_value("dtof_fps", 145);  // Read DTOF frame rate from config (100=10fps, 145=14.5fps)
         g_sendodom      = get_key_value("sendodom", 1);
         g_send_odom_baselink_tf = get_key_value("send_odom_baselink_tf", 0);
         g_sendcloudslam = get_key_value("sendcloudslam", 0);
@@ -1505,10 +1666,6 @@ int main(int argc, char *argv[])
         g_strict_usb3_0_check = get_key_value("strict_usb3.0_check", 1);
         g_use_host_ros_time = get_key_value("use_host_ros_time", 0);
         g_save_log = get_key_value("save_log", 0);
-
-        if (g_use_host_ros_time) {
-            g_rosNodeControlImpl.setUseHostRosTime(true);
-        }
 
         if (g_send_odom_baselink_tf) {
             g_rosNodeControlImpl.setSendOdomBaseLinkTF(true);

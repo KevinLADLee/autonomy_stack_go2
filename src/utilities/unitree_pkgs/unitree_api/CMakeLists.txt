@@ -23,7 +23,7 @@ find_package(ament_cmake REQUIRED)
 
 find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-find_package(rosidl_generator_dds_idl REQUIRED)
+find_package(rosidl_generator_dds_idl QUIET)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
         "msg/Request.msg"
@@ -38,15 +38,18 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES geometry_msgs
 )
 
-rosidl_generate_dds_interfaces(
-  ${rosidl_generate_interfaces_TARGET}__dds_connext_idl
-  IDL_TUPLES ${rosidl_generate_interfaces_IDL_TUPLES}
-  OUTPUT_SUBFOLDERS "dds_connext"
-)
-add_dependencies(
-  ${PROJECT_NAME}
-  ${PROJECT_NAME}__dds_connext_idl
-)
+# Connext DDS IDL 仅在使用 rosidl_generator_dds_idl 时生成（可选）
+if(rosidl_generator_dds_idl_FOUND)
+  rosidl_generate_dds_interfaces(
+    ${rosidl_generate_interfaces_TARGET}__dds_connext_idl
+    IDL_TUPLES ${rosidl_generate_interfaces_IDL_TUPLES}
+    OUTPUT_SUBFOLDERS "dds_connext"
+  )
+  add_dependencies(
+    ${PROJECT_NAME}
+    ${PROJECT_NAME}__dds_connext_idl
+  )
+endif()
 
 
 
