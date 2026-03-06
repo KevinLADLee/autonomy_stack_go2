@@ -1,3 +1,82 @@
+# ⚠️ 分支说明 / Branch Information
+
+**当前分支 / Current Branch:** `foxy-humble-odin-neupan`
+
+本分支基于原始的 `foxy-humble` 分支，集成了 **ODIN 激光雷达驱动** 和 **NeuPAN 深度学习导航规划器**，并进行了多项改进。
+
+## 🔄 主要改动 / Key Changes
+
+### ✨ 新增功能 / New Features
+
+1. **ODIN 激光雷达支持 / ODIN LiDAR Support**
+  - 新增包：`odin_ros_driver`
+  - 功能更新：提供 ODIN 传感器 ROS2 驱动能力，支持点云/深度图发布、建图参数控制、地图保存与重定位流程
+  - 项目链接 / Project Links: [odin_ros_driver](https://github.com/manifoldsdk/odin_ros_driver), [Odin1 Wiki](https://manifoldtechltd.github.io/wiki/Odin1/Cover.html)
+  - 结果：当前分支以 ODIN 传感链路为主，不再依赖原先独立 IMU 校准包
+
+2. **NeuPAN 深度学习导航 / NeuPAN Deep Learning Navigation**
+  - 新增包：`neupan_ros2`（含 `ddr_minimal_sim`）
+  - 功能更新：接入学习型导航规划器，支持多机器人参数化配置（Go2/Scout/Ranger/Limo/Simulation）
+  - 功能更新：提供最小仿真环境、激光模拟和可视化链路，便于离线验证规划策略
+  - 结果：新增一套可并行于传统规划器的端到端导航方案
+
+3. **TARE 自主探索规划器 / TARE Exploration Planner**
+  - 新增包：`tare_planner`、`tare_tsp_interfaces`
+  - 功能更新：增加未知区域自主探索、覆盖路径生成、边界发布、可视化输出
+  - 功能更新：通过 TSP 服务接口对探索访问顺序进行优化，减少无效往返
+  - 结果：系统从“导航到目标点”扩展为“可主动探索未知区域”
+
+4. **Docker 支持 / Docker Support**
+  - 新增容器化支持（开发镜像 + 运行镜像 + compose）
+  - 功能更新：统一依赖环境和启动流程，减少不同机器上的环境漂移问题
+  - 结果：更适合在本地与 Jetson 上复现和部署
+
+### 🔧 功能改进 / Feature Improvements
+
+1. **局部规划器重构 / Local Planner Refactoring**
+  - 相关包：`local_planner`
+  - 功能更新：重构局部规划与跟踪逻辑，统一使用 `maxSpeed` 进行速度约束
+  - 功能更新：新增路径文件读写能力，支持更稳定的路径复用与调试
+  - 功能修复：修正点云坐标变换问题，降低局部规划偏差
+
+2. **Go2 机器人集成 / Go2 Robot Integration**
+  - 相关包：`go2_description`、`go2_sport_api`
+  - 功能更新：补齐 Go2 机器人描述（URDF/Xacro/Mesh/RViz），提升模型一致性
+  - 功能更新：重构运动控制接口与机器人状态客户端，新增关节状态发布
+  - 结果：真机控制与状态反馈链路更完整、可观测性更高
+
+3. **系统启动脚本更新 / System Launch Scripts Update**
+  - 相关模块：`vehicle_simulator` 启动系统
+  - 功能更新：将多套系统启动入口迁移到 ROS2 Python launch
+  - 功能更新：拆分常规导航 / Route Planner / Exploration / NeuPAN 的独立启动流程
+  - 结果：按场景切换更明确，系统集成调试更方便
+
+4. **消息和配置更新 / Messages and Configuration Updates**
+  - 相关包：`unitree_hg`、`unitree_go`、`far_planner`
+  - 功能更新：扩展底层机器人消息定义（电机、IMU、低层状态等），提升状态表达粒度
+  - 功能更新：补充 `unitree_go` 电机消息，增强控制与状态对齐
+  - 功能更新：调整 FAR Planner 参数配置，使其更匹配当前传感器与系统链路
+  - 结果：通信接口更完整，规划参数更贴合当前分支架构
+
+### 🗑️ 移除模块 / Removed Modules
+
+- `src/slam/point_lio_unilidar/` - 移除旧 SLAM 模块
+- `src/ros_tcp_endpoint/` - 移除 Unity ROS-TCP 通道依赖
+- `src/utilities/calibrate_imu/` - 独立 IMU 校准模块移除（校准流程并入 ODIN 方案）
+- `src/utilities/transform_sensors/` - 独立传感器变换模块移除（能力并入新架构）
+
+### 📝 其他改进 / Other Improvements
+
+- 添加记录脚本 (`record.sh`)
+- 优化编译脚本 (`build_odin.sh`)
+- Docker 自动化部署脚本
+- 改进 RVIZ 配置文件
+- 增强可视化工具
+
+---
+
+## About
+
 The repository contains the full autonomy stack for the [Unitree Go2 platform](https://shop.unitree.com/products/unitree-go2). The system provides a navigation capability of taking a goal point and navigating Go2 autonomously to the goal point while building a map along the way. Alternatively, the system allows users to use a joystick controller to guide the navigation while the system itself is in charge of collision avoidance. The system uses only built-in sensors on Go2 - the L1 lidar and the IMU in the lidar. The system contains a SLAM module, a route planner, and a based autonomy system, where the base autonomy system further includes fundamental navigation modules for terrain traversability analysts, collision avoidance, and waypoint following. Users can run the system on the onboard computer or an external computer connected to Go2 via an Ethernet cable. Please make sure to use the **Go2 EDU version** which has SDK support.
 
 <p align="center">
@@ -224,3 +303,5 @@ The SLAM module is based on [Point-LIO](https://github.com/hku-mars/Point-LIO).
 The base autonomy system is based on [Autonomous Exploration Development Environment](https://www.cmu-exploration.com).
 
 The route planner is based on [FAR Planner](https://github.com/MichaelFYang/far_planner).
+
+The ODIN driver integration refers to [odin_ros_driver](https://github.com/manifoldsdk/odin_ros_driver) and [Odin1 Wiki](https://manifoldtehltd.github.io/wiki/Odin1/Cover.html).
