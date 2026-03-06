@@ -25,6 +25,7 @@ set (
   unitree_api
   rclcpp
   std_msgs
+  geometry_msgs
   # rosbag2_cpp
   sensor_msgs
 )
@@ -35,13 +36,19 @@ find_package(unitree_go REQUIRED)
 find_package(unitree_api REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 # find_package(rosbag2_cpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
-add_executable(vel_ctrl src/vel_ctrl_repub.cpp src/common/ros2_sport_client.cpp)
-add_library(go2_sport_api SHARED src/common/ros2_sport_client.cpp)
+add_executable(vel_ctrl src/vel_ctrl_repub.cpp)
+add_executable(go2_joint_state_publisher src/go2_joint_state_publisher.cpp)
+add_library(go2_sport_api SHARED src/common/ros2_sport_client.cpp src/common/motor_crc.cpp)
+
+target_link_libraries(vel_ctrl go2_sport_api)
+target_link_libraries(go2_joint_state_publisher go2_sport_api)
 
 ament_target_dependencies(vel_ctrl ${DEPENDENCY_LIST})
+ament_target_dependencies(go2_joint_state_publisher ${DEPENDENCY_LIST})
 ament_target_dependencies(go2_sport_api ${DEPENDENCY_LIST})
 
 install(
@@ -49,7 +56,14 @@ install(
         DESTINATION include
 )
 
-install(TARGETS vel_ctrl
+# Install launch files
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
+    install(DIRECTORY launch/
+        DESTINATION share/${PROJECT_NAME}/launch
+    )
+endif()
+
+install(TARGETS vel_ctrl go2_joint_state_publisher
         DESTINATION lib/${PROJECT_NAME})
 
 install(

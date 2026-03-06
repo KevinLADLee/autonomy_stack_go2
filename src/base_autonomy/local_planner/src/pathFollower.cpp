@@ -1,447 +1,461 @@
-#include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <chrono>
+#include <cmath>
 
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp/time.hpp"
-#include "rclcpp/clock.hpp"
-#include "builtin_interfaces/msg/time.hpp"
+#include <path_follower/path_follower.hpp>
 
-#include "nav_msgs/msg/odometry.hpp"
-#include "sensor_msgs/msg/point_cloud2.hpp"
-#include <sensor_msgs/msg/joy.hpp>
-#include <std_msgs/msg/float32.hpp>
-#include <std_msgs/msg/float32_multi_array.hpp>
-#include <std_msgs/msg/int8.hpp>
-#include <nav_msgs/msg/path.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
-#include <sensor_msgs/msg/imu.h>
+#include <tf2/transform_datatypes.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include "tf2/transform_datatypes.h"
-#include "tf2_ros/transform_broadcaster.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
-
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/kdtree/kdtree_flann.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-
-#include "message_filters/subscriber.h"
-#include "message_filters/synchronizer.h"
-#include "message_filters/sync_policies/approximate_time.h"
-#include "rmw/types.h"
-#include "rmw/qos_profiles.h"
-
-// For real robot
-#include "unitree_api/msg/request.hpp"
-#include "common/ros2_sport_client.h"
-
-using namespace std;
-
-const double PI = 3.1415926;
-
-double sensorOffsetX = 0;
-double sensorOffsetY = 0;
-int pubSkipNum = 1;
-int pubSkipCount = 0;
-bool twoWayDrive = true;
-double lookAheadDis = 0.5;
-double yawRateGain = 7.5;
-double stopYawRateGain = 7.5;
-double maxYawRate = 45.0;
-double maxSpeed = 1.0;
-double maxAccel = 1.0;
-double switchTimeThre = 1.0;
-double dirDiffThre = 0.1;
-double omniDirDiffThre = 1.5;
-double noRotSpeed = 10.0;
-double stopDisThre = 0.2;
-double slowDwnDisThre = 1.0;
-bool useInclRateToSlow = false;
-double inclRateThre = 120.0;
-double slowRate1 = 0.25;
-double slowRate2 = 0.5;
-double slowTime1 = 2.0;
-double slowTime2 = 2.0;
-bool useInclToStop = false;
-double inclThre = 45.0;
-double stopTime = 5.0;
-bool noRotAtStop = false;
-bool noRotAtGoal = true;
-bool manualMode = false;
-bool autonomyMode = false;
-double autonomySpeed = 1.0;
-double joyToSpeedDelay = 2.0;
-double goalCloseDis = 1.0;
-bool is_real_robot = false;
-
-float joySpeed = 0;
-float joySpeedRaw = 0;
-float joyYaw = 0;
-float joyManualFwd = 0;
-float joyManualLeft = 0;
-float joyManualYaw = 0;
-int safetyStop = 0;
-
-float vehicleX = 0;
-float vehicleY = 0;
-float vehicleZ = 0;
-float vehicleRoll = 0;
-float vehiclePitch = 0;
-float vehicleYaw = 0;
-
-float vehicleXRec = 0;
-float vehicleYRec = 0;
-float vehicleZRec = 0;
-float vehicleRollRec = 0;
-float vehiclePitchRec = 0;
-float vehicleYawRec = 0;
-
-float vehicleYawRate = 0;
-float vehicleSpeed = 0;
-
-double odomTime = 0;
-double joyTime = 0;
-double slowInitTime = 0;
-double stopInitTime = false;
-int pathPointID = 0;
-bool pathInit = false;
-bool navFwd = true;
-double switchTime = 0;
-
-nav_msgs::msg::Path path;
-rclcpp::Node::SharedPtr nh;
-
-unitree_api::msg::Request req;
-SportClient sport_req;
-
-void odomHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odomIn)
+namespace path_follower
 {
-  odomTime = rclcpp::Time(odomIn->header.stamp).seconds();
+
+// ============================================================================
+// PathFollowerConfig Implementation
+// ============================================================================
+
+void PathFollowerConfig::loadFromParameters(rclcpp::Node* node)
+{
+  // Sensor offsets
+  node->get_parameter("sensorOffsetX", sensorOffsetX);
+  node->get_parameter("sensorOffsetY", sensorOffsetY);
+
+  // Control parameters
+  node->get_parameter("lookAheadDis", lookAheadDis);
+  node->get_parameter("yawRateGain", yawRateGain);
+  node->get_parameter("stopYawRateGain", stopYawRateGain);
+  node->get_parameter("maxYawRate", maxYawRate);
+  node->get_parameter("maxSpeed", maxSpeed);
+  node->get_parameter("maxAccel", maxAccel);
+
+  // Direction switching
+  node->get_parameter("twoWayDrive", twoWayDrive);
+  node->get_parameter("switchTimeThre", switchTimeThre);
+  node->get_parameter("dirDiffThre", dirDiffThre);
+  node->get_parameter("omniDirDiffThre", omniDirDiffThre);
+
+  // Speed control
+  node->get_parameter("noRotSpeed", noRotSpeed);
+  node->get_parameter("stopDisThre", stopDisThre);
+  node->get_parameter("slowDwnDisThre", slowDwnDisThre);
+
+  // Incline-based slowdown
+  node->get_parameter("useInclRateToSlow", useInclRateToSlow);
+  node->get_parameter("inclRateThre", inclRateThre);
+  node->get_parameter("slowRate1", slowRate1);
+  node->get_parameter("slowRate2", slowRate2);
+  node->get_parameter("slowTime1", slowTime1);
+  node->get_parameter("slowTime2", slowTime2);
+
+  // Incline-based stop
+  node->get_parameter("useInclToStop", useInclToStop);
+  node->get_parameter("inclThre", inclThre);
+  node->get_parameter("stopTime", stopTime);
+
+  // Rotation control
+  node->get_parameter("noRotAtStop", noRotAtStop);
+  node->get_parameter("noRotAtGoal", noRotAtGoal);
+
+  // Goal parameters
+  node->get_parameter("goalCloseDis", goalCloseDis);
+
+  // System
+  node->get_parameter("is_real_robot", is_real_robot);
+  node->get_parameter("pubSkipNum", pubSkipNum);
+}
+
+// ============================================================================
+// PathFollower Implementation
+// ============================================================================
+
+PathFollower::PathFollower(const rclcpp::NodeOptions& options)
+: rclcpp::Node("path_follower", options)
+{
+  // Declare and load parameters
+  declareParameters();
+  loadParameters();
+
+  // Initialize ROS2 interfaces
+  initializeSubscribers();
+  initializePublishers();
+  initializeTimer();
+
+  RCLCPP_INFO(get_logger(), "PathFollower node initialized");
+}
+
+void PathFollower::declareParameters()
+{
+  // Sensor offsets
+  declare_parameter("sensorOffsetX", config_.sensorOffsetX);
+  declare_parameter("sensorOffsetY", config_.sensorOffsetY);
+
+  // Control parameters
+  declare_parameter("lookAheadDis", config_.lookAheadDis);
+  declare_parameter("yawRateGain", config_.yawRateGain);
+  declare_parameter("stopYawRateGain", config_.stopYawRateGain);
+  declare_parameter("maxYawRate", config_.maxYawRate);
+  declare_parameter("maxSpeed", config_.maxSpeed);
+  declare_parameter("maxAccel", config_.maxAccel);
+
+  // Direction switching
+  declare_parameter("twoWayDrive", config_.twoWayDrive);
+  declare_parameter("switchTimeThre", config_.switchTimeThre);
+  declare_parameter("dirDiffThre", config_.dirDiffThre);
+  declare_parameter("omniDirDiffThre", config_.omniDirDiffThre);
+
+  // Speed control
+  declare_parameter("noRotSpeed", config_.noRotSpeed);
+  declare_parameter("stopDisThre", config_.stopDisThre);
+  declare_parameter("slowDwnDisThre", config_.slowDwnDisThre);
+
+  // Incline-based slowdown
+  declare_parameter("useInclRateToSlow", config_.useInclRateToSlow);
+  declare_parameter("inclRateThre", config_.inclRateThre);
+  declare_parameter("slowRate1", config_.slowRate1);
+  declare_parameter("slowRate2", config_.slowRate2);
+  declare_parameter("slowTime1", config_.slowTime1);
+  declare_parameter("slowTime2", config_.slowTime2);
+
+  // Incline-based stop
+  declare_parameter("useInclToStop", config_.useInclToStop);
+  declare_parameter("inclThre", config_.inclThre);
+  declare_parameter("stopTime", config_.stopTime);
+
+  // Rotation control
+  declare_parameter("noRotAtStop", config_.noRotAtStop);
+  declare_parameter("noRotAtGoal", config_.noRotAtGoal);
+
+  // Goal parameters
+  declare_parameter("goalCloseDis", config_.goalCloseDis);
+
+  // System
+  declare_parameter("is_real_robot", config_.is_real_robot);
+  declare_parameter("pubSkipNum", config_.pubSkipNum);
+}
+
+void PathFollower::loadParameters()
+{
+  config_.loadFromParameters(this);
+}
+
+void PathFollower::initializeSubscribers()
+{
+  sub_odom_ = create_subscription<nav_msgs::msg::Odometry>(
+    "/state_estimation", 5,
+    std::bind(&PathFollower::odomCallback, this, std::placeholders::_1));
+
+  sub_path_ = create_subscription<nav_msgs::msg::Path>(
+    "/autonomy_stack/path", 5,
+    std::bind(&PathFollower::pathCallback, this, std::placeholders::_1));
+
+  sub_stop_ = create_subscription<std_msgs::msg::Int8>(
+    "/stop", 5,
+    std::bind(&PathFollower::stopCallback, this, std::placeholders::_1));
+}
+
+void PathFollower::initializePublishers()
+{
+  pub_cmd_vel_ = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 5);
+}
+
+void PathFollower::initializeTimer()
+{
+  // 100Hz control loop
+  timer_ = create_wall_timer(
+    std::chrono::milliseconds(10),
+    std::bind(&PathFollower::timerCallback, this));
+}
+
+// ============================================================================
+// Callback Methods
+// ============================================================================
+
+void PathFollower::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  vehicle_.odomTime = rclcpp::Time(msg->header.stamp).seconds();
+
   double roll, pitch, yaw;
-  geometry_msgs::msg::Quaternion geoQuat = odomIn->pose.pose.orientation;
-  tf2::Matrix3x3(tf2::Quaternion(geoQuat.x, geoQuat.y, geoQuat.z, geoQuat.w)).getRPY(roll, pitch, yaw);
+  const auto& quat = msg->pose.pose.orientation;
+  tf2::Matrix3x3(tf2::Quaternion(quat.x, quat.y, quat.z, quat.w)).getRPY(roll, pitch, yaw);
 
-  vehicleRoll = roll;
-  vehiclePitch = pitch;
-  vehicleYaw = yaw;
-  vehicleX = odomIn->pose.pose.position.x - cos(yaw) * sensorOffsetX + sin(yaw) * sensorOffsetY;
-  vehicleY = odomIn->pose.pose.position.y - sin(yaw) * sensorOffsetX - cos(yaw) * sensorOffsetY;
-  vehicleZ = odomIn->pose.pose.position.z;
+  vehicle_.roll = static_cast<float>(roll);
+  vehicle_.pitch = static_cast<float>(pitch);
+  vehicle_.yaw = static_cast<float>(yaw);
 
-  if ((fabs(roll) > inclThre * PI / 180.0 || fabs(pitch) > inclThre * PI / 180.0) && useInclToStop) {
-    stopInitTime = rclcpp::Time(odomIn->header.stamp).seconds();
+  // Compensate for sensor offset
+  vehicle_.x = static_cast<float>(msg->pose.pose.position.x
+                - cos(yaw) * config_.sensorOffsetX
+                + sin(yaw) * config_.sensorOffsetY);
+  vehicle_.y = static_cast<float>(msg->pose.pose.position.y
+                - sin(yaw) * config_.sensorOffsetX
+                - cos(yaw) * config_.sensorOffsetY);
+  vehicle_.z = static_cast<float>(msg->pose.pose.position.z);
+
+  // Check incline for stopping
+  if (config_.useInclToStop) {
+    if (std::abs(vehicle_.roll) > config_.inclThre * DEG_TO_RAD ||
+        std::abs(vehicle_.pitch) > config_.inclThre * DEG_TO_RAD) {
+      pathState_.stopInitTime = vehicle_.odomTime;
+    }
   }
 
-  if ((fabs(odomIn->twist.twist.angular.x) > inclRateThre * PI / 180.0 || fabs(odomIn->twist.twist.angular.y) > inclRateThre * PI / 180.0) && useInclRateToSlow) {
-    slowInitTime = rclcpp::Time(odomIn->header.stamp).seconds();
+  // Check incline rate for slowdown
+  if (config_.useInclRateToSlow) {
+    if (std::abs(msg->twist.twist.angular.x) > config_.inclRateThre * DEG_TO_RAD ||
+        std::abs(msg->twist.twist.angular.y) > config_.inclRateThre * DEG_TO_RAD) {
+      pathState_.slowInitTime = vehicle_.odomTime;
+    }
   }
 }
 
-void pathHandler(const nav_msgs::msg::Path::ConstSharedPtr pathIn)
+void PathFollower::pathCallback(const nav_msgs::msg::Path::SharedPtr msg)
 {
-  int pathSize = pathIn->poses.size();
-  path.poses.resize(pathSize);
-  for (int i = 0; i < pathSize; i++) {
-    path.poses[i].pose.position.x = pathIn->poses[i].pose.position.x;
-    path.poses[i].pose.position.y = pathIn->poses[i].pose.position.y;
-    path.poses[i].pose.position.z = pathIn->poses[i].pose.position.z;
+  const size_t pathSize = msg->poses.size();
+  pathState_.path.poses.resize(pathSize);
+
+  for (size_t i = 0; i < pathSize; ++i) {
+    pathState_.path.poses[i].pose.position.x = msg->poses[i].pose.position.x;
+    pathState_.path.poses[i].pose.position.y = msg->poses[i].pose.position.y;
+    pathState_.path.poses[i].pose.position.z = msg->poses[i].pose.position.z;
   }
 
-  vehicleXRec = vehicleX;
-  vehicleYRec = vehicleY;
-  vehicleZRec = vehicleZ;
-  vehicleRollRec = vehicleRoll;
-  vehiclePitchRec = vehiclePitch;
-  vehicleYawRec = vehicleYaw;
+  // Record vehicle state when path is received
+  vehicleRec_.x = vehicle_.x;
+  vehicleRec_.y = vehicle_.y;
+  vehicleRec_.z = vehicle_.z;
+  vehicleRec_.roll = vehicle_.roll;
+  vehicleRec_.pitch = vehicle_.pitch;
+  vehicleRec_.yaw = vehicle_.yaw;
 
-  pathPointID = 0;
-  pathInit = true;
+  pathState_.pointID = 0;
+  pathState_.initialized = true;
 }
 
-void joystickHandler(const sensor_msgs::msg::Joy::ConstSharedPtr joy)
+void PathFollower::stopCallback(const std_msgs::msg::Int8::SharedPtr msg)
 {
-  joyTime = nh->now().seconds(); 
-  joySpeedRaw = sqrt(joy->axes[3] * joy->axes[3] + joy->axes[4] * joy->axes[4]);
-  joySpeed = joySpeedRaw;
-  if (joySpeed > 1.0) joySpeed = 1.0;
-  if (joy->axes[4] == 0) joySpeed = 0;
-  joyYaw = joy->axes[3];
-  if (joySpeed == 0 && noRotAtStop) joyYaw = 0;
+  pathState_.safetyStop = msg->data;
+}
 
-  if (joy->axes[4] < 0 && !twoWayDrive) {
-    joySpeed = 0;
-    joyYaw = 0;
+// ============================================================================
+// Timer Callback - Main Control Loop
+// ============================================================================
+
+void PathFollower::timerCallback()
+{
+  if (pathState_.initialized) {
+    updatePathFollowing();
+  }
+}
+
+// ============================================================================
+// Path Following Logic
+// ============================================================================
+
+void PathFollower::updatePathFollowing()
+{
+  // 1. Calculate relative vehicle position
+  const float cosYawRec = cos(vehicleRec_.yaw);
+  const float sinYawRec = sin(vehicleRec_.yaw);
+
+  const float vehicleXRel = cosYawRec * (vehicle_.x - vehicleRec_.x)
+                          + sinYawRec * (vehicle_.y - vehicleRec_.y);
+  const float vehicleYRel = -sinYawRec * (vehicle_.x - vehicleRec_.x)
+                          + cosYawRec * (vehicle_.y - vehicleRec_.y);
+
+  // 2. Find lookahead point and calculate distance to goal
+  const int pathSize = static_cast<int>(pathState_.path.poses.size());
+
+  // Distance to goal
+  const float endDisX = pathState_.path.poses[pathSize - 1].pose.position.x - vehicleXRel;
+  const float endDisY = pathState_.path.poses[pathSize - 1].pose.position.y - vehicleYRel;
+  const float endDis = std::sqrt(endDisX * endDisX + endDisY * endDisY);
+
+  // Advance to lookahead point
+  float disX, disY, dis;
+  while (pathState_.pointID < pathSize - 1) {
+    disX = pathState_.path.poses[pathState_.pointID].pose.position.x - vehicleXRel;
+    disY = pathState_.path.poses[pathState_.pointID].pose.position.y - vehicleYRel;
+    dis = std::sqrt(disX * disX + disY * disY);
+    if (dis < config_.lookAheadDis) {
+      pathState_.pointID++;
+    } else {
+      break;
+    }
   }
 
-  joyManualFwd = joy->axes[4];
-  joyManualLeft = joy->axes[3];
-  joyManualYaw = joy->axes[0];
+  // Get lookahead point distance and direction
+  disX = pathState_.path.poses[pathState_.pointID].pose.position.x - vehicleXRel;
+  disY = pathState_.path.poses[pathState_.pointID].pose.position.y - vehicleYRel;
+  dis = std::sqrt(disX * disX + disY * disY);
+  const float pathDir = std::atan2(disY, disX);
 
-  if (joy->axes[2] > -0.1) {
-    autonomyMode = false;
+  // 3. Calculate direction difference
+  float dirDiff = vehicle_.yaw - vehicleRec_.yaw - pathDir;
+  dirDiff = normalizeAngle(dirDiff);
+
+  // 4. Handle two-way drive
+  if (config_.twoWayDrive) {
+    const double currentTime = now().seconds();
+    if (std::abs(dirDiff) > PI / 2.0f && pathState_.forward &&
+        currentTime - pathState_.switchTime > config_.switchTimeThre) {
+      pathState_.forward = false;
+      pathState_.switchTime = currentTime;
+    } else if (std::abs(dirDiff) < PI / 2.0f && !pathState_.forward &&
+               currentTime - pathState_.switchTime > config_.switchTimeThre) {
+      pathState_.forward = true;
+      pathState_.switchTime = currentTime;
+    }
+  }
+
+  // 5. Calculate target speed based on direction
+  float targetSpeed = static_cast<float>(config_.maxSpeed);
+  if (!pathState_.forward) {
+    dirDiff = normalizeAngle(dirDiff + PI);
+    targetSpeed *= -1.0f;
+  }
+
+  // 6. Calculate yaw rate
+  const float maxAccelPerCycle = static_cast<float>(config_.maxAccel / 100.0);
+  if (std::abs(vehicle_.speed) < 2.0f * maxAccelPerCycle) {
+    vehicle_.yawRate = -static_cast<float>(config_.stopYawRateGain) * dirDiff;
   } else {
-    autonomyMode = true;
+    vehicle_.yawRate = -static_cast<float>(config_.yawRateGain) * dirDiff;
   }
 
-  if (joy->axes[5] > -0.1) {
-    manualMode = false;
+  // Limit yaw rate
+  const float maxYawRateRad = static_cast<float>(config_.maxYawRate * DEG_TO_RAD);
+  vehicle_.yawRate = std::clamp(vehicle_.yawRate, -maxYawRateRad, maxYawRateRad);
+
+  // Disable rotation at goal
+  if (pathSize <= 1 || (dis < config_.stopDisThre && config_.noRotAtGoal)) {
+    vehicle_.yawRate = 0.0f;
+  }
+
+  // 7. Calculate final speed with goal proximity slowdown
+  if (pathSize <= 1) {
+    targetSpeed = 0.0f;
+  } else if (endDis < config_.slowDwnDisThre) {
+    targetSpeed *= (endDis / config_.slowDwnDisThre);
+  }
+
+  // Apply incline-based slowdown
+  if (vehicle_.odomTime < pathState_.slowInitTime + config_.slowTime1 && pathState_.slowInitTime > 0) {
+    targetSpeed *= static_cast<float>(config_.slowRate1);
+  } else if (vehicle_.odomTime < pathState_.slowInitTime + config_.slowTime1 + config_.slowTime2 &&
+             pathState_.slowInitTime > 0) {
+    targetSpeed *= static_cast<float>(config_.slowRate2);
+  }
+
+  // 8. Apply acceleration limits
+  applyAccelerationLimits(targetSpeed, dirDiff, dis, endDis);
+
+  // 9. Disable rotation at high speed
+  if (std::abs(vehicle_.speed) > config_.noRotSpeed) {
+    vehicle_.yawRate = 0.0f;
+  }
+
+  // 10. Apply incline-based stop
+  if (config_.useInclToStop && vehicle_.odomTime < pathState_.stopInitTime + config_.stopTime &&
+      pathState_.stopInitTime > 0) {
+    vehicle_.speed = 0.0f;
+    vehicle_.yawRate = 0.0f;
+  }
+
+  // 11. Apply safety checks
+  applySafetyChecks();
+
+  // 12. Publish command
+  pathState_.pubSkipCounter--;
+  if (pathState_.pubSkipCounter < 0) {
+    const float maxAccelPerCycle = static_cast<float>(config_.maxAccel / 100.0);
+    float linearX, linearY;
+    if (std::abs(vehicle_.speed) <= maxAccelPerCycle) {
+      linearX = 0.0f;
+      linearY = 0.0f;
+    } else {
+      linearX = cos(dirDiff) * vehicle_.speed;
+      linearY = -sin(dirDiff) * vehicle_.speed;
+    }
+    publishCommand(linearX, linearY, vehicle_.yawRate);
+    pathState_.pubSkipCounter = config_.pubSkipNum;
+  }
+}
+
+float PathFollower::normalizeAngle(float angle)
+{
+  while (angle > PI) angle -= 2.0f * static_cast<float>(PI);
+  while (angle < -PI) angle += 2.0f * static_cast<float>(PI);
+  return angle;
+}
+
+void PathFollower::applyAccelerationLimits(float targetSpeed, float dirDiff, float dis, float endDis)
+{
+  const float maxAccelPerCycle = static_cast<float>(config_.maxAccel / 100.0);
+
+  // Check if direction is acceptable for movement
+  const bool directionOK = (std::abs(dirDiff) < config_.dirDiffThre) ||
+                          (endDis < config_.goalCloseDis && std::abs(dirDiff) < config_.omniDirDiffThre);
+
+  if (directionOK && dis > config_.stopDisThre) {
+    // Accelerate or decelerate towards target speed
+    if (vehicle_.speed < targetSpeed) {
+      vehicle_.speed += maxAccelPerCycle;
+    } else if (vehicle_.speed > targetSpeed) {
+      vehicle_.speed -= maxAccelPerCycle;
+    }
   } else {
-    manualMode = true;
+    // Decelerate to stop
+    if (vehicle_.speed > 0) {
+      vehicle_.speed -= maxAccelPerCycle;
+    } else if (vehicle_.speed < 0) {
+      vehicle_.speed += maxAccelPerCycle;
+    }
   }
 }
 
-void speedHandler(const std_msgs::msg::Float32::ConstSharedPtr speed)
+void PathFollower::applySafetyChecks()
 {
-  double speedTime = nh->now().seconds();
-  if (autonomyMode && speedTime - joyTime > joyToSpeedDelay && joySpeedRaw == 0) {
-    joySpeed = speed->data / maxSpeed;
+  // Safety stop bit flags:
+  // bit 0 (1): stop forward motion
+  // bit 1 (2): stop backward motion
+  // bit 2 (4): stop positive rotation
+  // bit 3 (8): stop negative rotation
 
-    if (joySpeed < 0) joySpeed = 0;
-    else if (joySpeed > 1.0) joySpeed = 1.0;
+  if ((pathState_.safetyStop & 1) && vehicle_.speed > 0) {
+    vehicle_.speed = 0;
+  }
+  if ((pathState_.safetyStop & 2) && vehicle_.speed < 0) {
+    vehicle_.speed = 0;
+  }
+  if ((pathState_.safetyStop & 4) && vehicle_.yawRate > 0) {
+    vehicle_.yawRate = 0;
+  }
+  if ((pathState_.safetyStop & 8) && vehicle_.yawRate < 0) {
+    vehicle_.yawRate = 0;
   }
 }
 
-void stopHandler(const std_msgs::msg::Int8::ConstSharedPtr stop)
+void PathFollower::publishCommand(float linearX, float linearY, float angularZ)
 {
-  safetyStop = stop->data;
+  geometry_msgs::msg::Twist cmd_vel;
+  cmd_vel.linear.x = linearX;
+  cmd_vel.linear.y = linearY;
+  cmd_vel.angular.z = angularZ;
+  pub_cmd_vel_->publish(cmd_vel);
+
+  // Note: Go2 command forwarding is now handled by vel_ctrl_repub node
+  // which subscribes to /cmd_vel and forwards to /api/sport/request
 }
+
+}  // namespace path_follower
+
+// ============================================================================
+// Main Function
+// ============================================================================
 
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
-  nh = rclcpp::Node::make_shared("pathFollower");
-
-  nh->declare_parameter<double>("sensorOffsetX", sensorOffsetX);
-  nh->declare_parameter<double>("sensorOffsetY", sensorOffsetY);
-  nh->declare_parameter<int>("pubSkipNum", pubSkipNum);
-  nh->declare_parameter<bool>("twoWayDrive", twoWayDrive);
-  nh->declare_parameter<double>("lookAheadDis", lookAheadDis);
-  nh->declare_parameter<double>("yawRateGain", yawRateGain);
-  nh->declare_parameter<double>("stopYawRateGain", stopYawRateGain);
-  nh->declare_parameter<double>("maxYawRate", maxYawRate);
-  nh->declare_parameter<double>("maxSpeed", maxSpeed);
-  nh->declare_parameter<double>("maxAccel", maxAccel);
-  nh->declare_parameter<double>("switchTimeThre", switchTimeThre);
-  nh->declare_parameter<double>("dirDiffThre", dirDiffThre);
-  nh->declare_parameter<double>("omniDirDiffThre", omniDirDiffThre);
-  nh->declare_parameter<double>("noRotSpeed", noRotSpeed);
-  nh->declare_parameter<double>("stopDisThre", stopDisThre);
-  nh->declare_parameter<double>("slowDwnDisThre", slowDwnDisThre);
-  nh->declare_parameter<bool>("useInclRateToSlow", useInclRateToSlow);
-  nh->declare_parameter<double>("inclRateThre", inclRateThre);
-  nh->declare_parameter<double>("slowRate1", slowRate1);
-  nh->declare_parameter<double>("slowRate2", slowRate2);
-  nh->declare_parameter<double>("slowTime1", slowTime1);
-  nh->declare_parameter<double>("slowTime2", slowTime2);
-  nh->declare_parameter<bool>("useInclToStop", useInclToStop);
-  nh->declare_parameter<double>("inclThre", inclThre);
-  nh->declare_parameter<double>("stopTime", stopTime);
-  nh->declare_parameter<bool>("noRotAtStop", noRotAtStop);
-  nh->declare_parameter<bool>("noRotAtGoal", noRotAtGoal);
-  nh->declare_parameter<bool>("autonomyMode", autonomyMode);
-  nh->declare_parameter<double>("autonomySpeed", autonomySpeed);
-  nh->declare_parameter<double>("joyToSpeedDelay", joyToSpeedDelay);
-  nh->declare_parameter<double>("goalCloseDis", goalCloseDis);
-  nh->declare_parameter<bool>("is_real_robot", is_real_robot);
-
-  nh->get_parameter("sensorOffsetX", sensorOffsetX);
-  nh->get_parameter("sensorOffsetY", sensorOffsetY);
-  nh->get_parameter("pubSkipNum", pubSkipNum);
-  nh->get_parameter("twoWayDrive", twoWayDrive);
-  nh->get_parameter("lookAheadDis", lookAheadDis);
-  nh->get_parameter("yawRateGain", yawRateGain);
-  nh->get_parameter("stopYawRateGain", stopYawRateGain);
-  nh->get_parameter("maxYawRate", maxYawRate);
-  nh->get_parameter("maxSpeed", maxSpeed);
-  nh->get_parameter("maxAccel", maxAccel);
-  nh->get_parameter("switchTimeThre", switchTimeThre);
-  nh->get_parameter("dirDiffThre", dirDiffThre);
-  nh->get_parameter("omniDirDiffThre", omniDirDiffThre);
-  nh->get_parameter("noRotSpeed", noRotSpeed);
-  nh->get_parameter("stopDisThre", stopDisThre);
-  nh->get_parameter("slowDwnDisThre", slowDwnDisThre);
-  nh->get_parameter("useInclRateToSlow", useInclRateToSlow);
-  nh->get_parameter("inclRateThre", inclRateThre);
-  nh->get_parameter("slowRate1", slowRate1);
-  nh->get_parameter("slowRate2", slowRate2);
-  nh->get_parameter("slowTime1", slowTime1);
-  nh->get_parameter("slowTime2", slowTime2);
-  nh->get_parameter("useInclToStop", useInclToStop);
-  nh->get_parameter("inclThre", inclThre);
-  nh->get_parameter("stopTime", stopTime);
-  nh->get_parameter("noRotAtStop", noRotAtStop);
-  nh->get_parameter("noRotAtGoal", noRotAtGoal);
-  nh->get_parameter("autonomyMode", autonomyMode);
-  nh->get_parameter("autonomySpeed", autonomySpeed);
-  nh->get_parameter("joyToSpeedDelay", joyToSpeedDelay);
-  nh->get_parameter("goalCloseDis", goalCloseDis);
-  nh->get_parameter("is_real_robot", is_real_robot);
-
-  auto subOdom = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odomHandler);
-
-  auto subPath = nh->create_subscription<nav_msgs::msg::Path>("/path", 5, pathHandler);
-
-  auto subJoystick = nh->create_subscription<sensor_msgs::msg::Joy>("/joy", 5, joystickHandler);
-
-  auto subSpeed = nh->create_subscription<std_msgs::msg::Float32>("/speed", 5, speedHandler);
-
-  auto subStop = nh->create_subscription<std_msgs::msg::Int8>("/stop", 5, stopHandler);
-
-  auto pubSpeed = nh->create_publisher<geometry_msgs::msg::TwistStamped>("/cmd_vel", 5);
-
-  auto pubGo2Request = nh->create_publisher<unitree_api::msg::Request>("/api/sport/request", 10);
-
-  geometry_msgs::msg::TwistStamped cmd_vel;
-  cmd_vel.header.frame_id = "vehicle";
-
-  if (autonomyMode) {
-    joySpeed = autonomySpeed / maxSpeed;
-
-    if (joySpeed < 0) joySpeed = 0;
-    else if (joySpeed > 1.0) joySpeed = 1.0;
-  }
-
-  rclcpp::Rate rate(100);
-  bool status = rclcpp::ok();
-  while (status) {
-    rclcpp::spin_some(nh);
-
-    if (pathInit) {
-      float vehicleXRel = cos(vehicleYawRec) * (vehicleX - vehicleXRec) 
-                        + sin(vehicleYawRec) * (vehicleY - vehicleYRec);
-      float vehicleYRel = -sin(vehicleYawRec) * (vehicleX - vehicleXRec) 
-                        + cos(vehicleYawRec) * (vehicleY - vehicleYRec);
-
-      int pathSize = path.poses.size();
-      float endDisX = path.poses[pathSize - 1].pose.position.x - vehicleXRel;
-      float endDisY = path.poses[pathSize - 1].pose.position.y - vehicleYRel;
-      float endDis = sqrt(endDisX * endDisX + endDisY * endDisY);
-
-      float disX, disY, dis;
-      while (pathPointID < pathSize - 1) {
-        disX = path.poses[pathPointID].pose.position.x - vehicleXRel;
-        disY = path.poses[pathPointID].pose.position.y - vehicleYRel;
-        dis = sqrt(disX * disX + disY * disY);
-        if (dis < lookAheadDis) {
-          pathPointID++;
-        } else {
-          break;
-        }
-      }
-
-      disX = path.poses[pathPointID].pose.position.x - vehicleXRel;
-      disY = path.poses[pathPointID].pose.position.y - vehicleYRel;
-      dis = sqrt(disX * disX + disY * disY);
-      float pathDir = atan2(disY, disX);
-
-      float dirDiff = vehicleYaw - vehicleYawRec - pathDir;
-      if (dirDiff > PI) dirDiff -= 2 * PI;
-      else if (dirDiff < -PI) dirDiff += 2 * PI;
-      if (dirDiff > PI) dirDiff -= 2 * PI;
-      else if (dirDiff < -PI) dirDiff += 2 * PI;
-
-      if (twoWayDrive) {
-        double time = nh->now().seconds();
-        if (fabs(dirDiff) > PI / 2 && navFwd && time - switchTime > switchTimeThre) {
-          navFwd = false;
-          switchTime = time;
-        } else if (fabs(dirDiff) < PI / 2 && !navFwd && time - switchTime > switchTimeThre) {
-          navFwd = true;
-          switchTime = time;
-        }
-      }
-
-      float joySpeed2 = maxSpeed * joySpeed;
-      if (!navFwd) {
-        dirDiff += PI;
-        if (dirDiff > PI) dirDiff -= 2 * PI;
-        joySpeed2 *= -1;
-      }
-
-      if (fabs(vehicleSpeed) < 2.0 * maxAccel / 100.0) vehicleYawRate = -stopYawRateGain * dirDiff;
-      else vehicleYawRate = -yawRateGain * dirDiff;
-
-      if (vehicleYawRate > maxYawRate * PI / 180.0) vehicleYawRate = maxYawRate * PI / 180.0;
-      else if (vehicleYawRate < -maxYawRate * PI / 180.0) vehicleYawRate = -maxYawRate * PI / 180.0;
-
-      if (joySpeed2 == 0 && !autonomyMode) {
-        vehicleYawRate = maxYawRate * joyYaw * PI / 180.0;
-      } else if (pathSize <= 1 || (dis < stopDisThre && noRotAtGoal)) {
-        vehicleYawRate = 0;
-      }
-
-      if (pathSize <= 1) {
-        joySpeed2 = 0;
-      } else if (endDis / slowDwnDisThre < joySpeed) {
-        joySpeed2 *= endDis / slowDwnDisThre;
-      }
-
-      float joySpeed3 = joySpeed2;
-      if (odomTime < slowInitTime + slowTime1 && slowInitTime > 0) joySpeed3 *= slowRate1;
-      else if (odomTime < slowInitTime + slowTime1 + slowTime2 && slowInitTime > 0) joySpeed3 *= slowRate2;
-
-      if ((fabs(dirDiff) < dirDiffThre || (dis < goalCloseDis && fabs(dirDiff) < omniDirDiffThre))  && dis > stopDisThre) {
-        if (vehicleSpeed < joySpeed3) vehicleSpeed += maxAccel / 100.0;
-        else if (vehicleSpeed > joySpeed3) vehicleSpeed -= maxAccel / 100.0;
-      } else {
-        if (vehicleSpeed > 0) vehicleSpeed -= maxAccel / 100.0;
-        else if (vehicleSpeed < 0) vehicleSpeed += maxAccel / 100.0;
-      }
-
-      if (fabs(vehicleSpeed) > noRotSpeed) vehicleYawRate = 0;
-
-      if (odomTime < stopInitTime + stopTime && stopInitTime > 0) {
-        vehicleSpeed = 0;
-        vehicleYawRate = 0;
-      }
-
-      if ((safetyStop & 1) > 0 && vehicleSpeed > 0) vehicleSpeed = 0;
-      if ((safetyStop & 2) > 0 && vehicleSpeed < 0) vehicleSpeed = 0;
-      if ((safetyStop & 4) > 0 && vehicleYawRate > 0) vehicleYawRate = 0;
-      if ((safetyStop & 8) > 0 && vehicleYawRate < 0) vehicleYawRate = 0;
-      //if ((safetyStop & 1) > 0 || (safetyStop & 2) > 0) vehicleYawRate = 0; //No rotation at forward/backward stop
-
-      pubSkipCount--;
-      if (pubSkipCount < 0) {
-        cmd_vel.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
-        if (fabs(vehicleSpeed) <= maxAccel / 100.0) {
-          cmd_vel.twist.linear.x = 0;
-          cmd_vel.twist.linear.y = 0;
-        } else {
-          cmd_vel.twist.linear.x = cos(dirDiff) * vehicleSpeed;
-          cmd_vel.twist.linear.y = -sin(dirDiff) * vehicleSpeed;
-        }
-        cmd_vel.twist.angular.z = vehicleYawRate;
-        
-        if (manualMode) {
-          cmd_vel.twist.linear.x = maxSpeed * joyManualFwd;
-          cmd_vel.twist.linear.y = maxSpeed / 2.0 * joyManualLeft;
-          cmd_vel.twist.angular.z = maxYawRate * PI / 180.0 * joyManualYaw;
-        }
-
-        pubSpeed->publish(cmd_vel);
-
-        pubSkipCount = pubSkipNum;
-
-        if (is_real_robot)
-        {
-          if (cmd_vel.twist.linear.x == 0 && cmd_vel.twist.linear.y == 0 && cmd_vel.twist.angular.z == 0){
-          	sport_req.StopMove(req);
-          }
-          else{
-               sport_req.Move(req, cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z);
-          }
-          pubGo2Request->publish(req);
-        }
-      }
-    }
-
-    status = rclcpp::ok();
-    rate.sleep();
-  }
-
+  auto node = std::make_shared<path_follower::PathFollower>();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
   return 0;
 }

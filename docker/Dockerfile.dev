@@ -1,0 +1,64 @@
+# Dockerfile.dev - Development version (builds inside container)
+# This version skips the build step during image creation for faster iteration
+# Use this if you frequently modify code and want faster rebuilds
+
+# Dockerfile for Jetson Orin NX (ARM64) with ROS2 Humble
+# Base image: dustynv/ros - Optimized ROS2 Humble for Jetson devices with L4T r35.3.1
+# This image includes NVIDIA optimizations and is specifically designed for Jetson platforms
+FROM dustynv/ros:humble-desktop-l4t-r35.3.1
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DOMAIN_ID=0
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libusb-dev \
+    python3-colcon-common-extensions \
+    python-is-python3 \
+    python3-pip \
+    git \
+    build-essential \
+    cmake \
+    libeigen3-dev \
+    libpcl-dev \
+    ros-humble-perception-pcl \
+    ros-humble-sensor-msgs-py \
+    ros-humble-tf-transformations \
+    ros-humble-joy \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-rosidl-generator-dds-idl \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-libav \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir transforms3d pyyaml
+
+# Create workspace directory
+WORKDIR /workspace
+
+# Copy entrypoint script
+COPY docker/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Source the workspace setup (will be sourced when code is built)
+RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc && \
+    echo "if [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi" >> ~/.bashrc
+
+# Set working directory
+WORKDIR /workspace
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+# Default command
+CMD ["/bin/bash"]
+
+# Note: Source code will be mounted as a volume, and you build inside the container:
+# docker-compose exec autonomy_stack bash
+# cd /workspace
+# source /opt/ros/humble/setup.bash
+# colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+

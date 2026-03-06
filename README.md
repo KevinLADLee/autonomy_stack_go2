@@ -4,6 +4,77 @@ The repository contains the full autonomy stack for the [Unitree Go2 platform](h
   <img src="img/go2_sensors.jpg" alt="Go2 Sensors" width="40%"/>
 </p>
 
+## Branch Overview: foxy-humble-odin-neupan
+
+> **Note:** This is the `foxy-humble-odin-neupan` branch, which extends the original [`foxy-humble`](https://github.com/KevinLADLee/autonomy_stack_go2/tree/foxy-humble) branch with support for the **Odin1 sensor**, the **NeuPAN neural local planner**, and the **TARE exploration planner**, as well as **Docker-based deployment** targeting the Jetson Orin NX platform.
+
+### What's Different from the `foxy-humble` Branch
+
+| Feature | `foxy-humble` | `foxy-humble-odin-neupan` |
+|---|---|---|
+| **Sensor** | Unitree L1 lidar | [Odin1](https://manifoldtehltd.github.io/wiki/Odin1/Cover.html) (Manifold Tech Ltd.) |
+| **SLAM** | [Point-LIO](https://github.com/hku-mars/Point-LIO) via `point_lio_unilidar` | Odin1 built-in SLAM via `odin_ros_driver` |
+| **Local Planner / Collision Avoidance** | Rule-based local planner | Rule-based local planner + [NeuPAN](https://github.com/hanruihua/NeuPAN) neural planner |
+| **Exploration Planner** | Not included | [TARE Planner](https://github.com/caochao39/tare_planner) for autonomous exploration |
+| **Docker Deployment** | Not included | Docker support for Jetson Orin NX (ARM64) |
+
+### New Modules
+
+#### 1. Odin1 Sensor Driver (`src/utilities/odin_ros_driver`)
+The Odin1 sensor by [Manifold Tech Ltd.](https://manifoldtehltd.github.io/wiki/Odin1/Cover.html) is used in place of the Unitree L1 lidar. Unlike the L1 lidar, Odin1 provides:
+- Built-in SLAM with loop closure and relocalization (replaces the separate Point-LIO SLAM module)
+- Integrated RGB camera (publishes `/odin1/image` and `/odin1/image/compressed`)
+- Point cloud output (`/odin1/cloud_render`, `/odin1/cloud_slam`)
+- Built-in IMU
+
+Build the Odin1 driver separately from the rest of the workspace:
+```
+./build_odin.sh
+```
+For full driver documentation and setup see [`src/utilities/odin_ros_driver/README.md`](src/utilities/odin_ros_driver/README.md).
+
+#### 2. NeuPAN Neural Local Planner (`src/neupan_ros2`)
+[NeuPAN](https://github.com/hanruihua/NeuPAN) (Neural Proximal Alternating Network) is an end-to-end neural network-based local planner that maps laser scan observations directly to velocity commands. It complements the existing rule-based collision avoidance system.
+
+Key features:
+- End-to-end learning: direct laser scan to velocity command mapping
+- Real-time neural network inference
+- Supports both simulation and physical robots (e.g., AgileX Limo)
+- Requires ROS2 Humble and Python 3.10+
+
+Install Python dependencies for NeuPAN:
+```
+pip3 install torch torchvision
+pip3 install neupan
+pip3 install "numpy<2.0" scipy matplotlib pyyaml
+```
+For full setup and usage instructions see [`src/neupan_ros2/README.md`](src/neupan_ros2/README.md).
+
+#### 3. TARE Exploration Planner (`src/exploration_planner`)
+The [TARE Planner](https://github.com/caochao39/tare_planner) enables autonomous exploration of unknown environments. When using this planner, Go2 will autonomously explore and map its surroundings without requiring a user-specified goal point.
+
+To launch the system with the exploration planner:
+```
+./system_real_robot_with_exploration_planner.sh
+```
+
+#### 4. Docker Deployment for Jetson Orin NX (`docker/`)
+This branch includes Docker support for deploying the full autonomy stack inside a container on a **Jetson Orin NX** (ARM64, Ubuntu 20.04). The container runs ROS2 Humble with GPU acceleration via the NVIDIA Container Toolkit.
+
+Quick start:
+```
+chmod +x docker-setup.sh docker-run.sh
+./docker-setup.sh
+./docker-run.sh rebuild
+./docker-run.sh shell
+```
+For detailed Docker setup, configuration, and troubleshooting see [`docker/DOCKER_README.md`](docker/DOCKER_README.md).
+
+### Additional Scripts
+
+- **`build_odin.sh`**: Builds only the `odin_ros_driver` package. Run this separately because the Odin driver requires specific native libraries.
+- **`record.sh`**: Records key ROS2 topics (including Odin1 sensor data, navigation state, and TF) to a bag file in MCAP format under the `bags/` directory.
+
 ## Simulation Setup
 
 ### Base Autonomy
@@ -217,6 +288,10 @@ ros2 bag play bagfile_name.db3
 
 [point_lio_unilidar](https://github.com/unitreerobotics/point_lio_unilidar), [Unitree ROS2 drive](https://github.com/unitreerobotics/unitree_ros2), and [ROS-TCP-Endpoint](https://github.com/Unity-Technologies/ROS-TCP-Endpoint) packages are from open-source releases.
 
+[odin_ros_driver](https://github.com/manifoldsdk/odin_ros_driver) is from an open-source release by Manifold Tech Ltd.
+
+[neupan_ros2](https://github.com/KevinLADLee/neupan_ros2) is based on the open-source [NeuPAN](https://github.com/hanruihua/NeuPAN) and [NeuPAN-ROS](https://github.com/hanruihua/neupan_ros) projects.
+
 ## Relevant Links
 
 The SLAM module is based on [Point-LIO](https://github.com/hku-mars/Point-LIO).
@@ -224,3 +299,7 @@ The SLAM module is based on [Point-LIO](https://github.com/hku-mars/Point-LIO).
 The base autonomy system is based on [Autonomous Exploration Development Environment](https://www.cmu-exploration.com).
 
 The route planner is based on [FAR Planner](https://github.com/MichaelFYang/far_planner).
+
+The exploration planner is based on [TARE Planner](https://github.com/caochao39/tare_planner).
+
+The neural local planner is based on [NeuPAN](https://github.com/hanruihua/NeuPAN).

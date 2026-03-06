@@ -1,0 +1,46 @@
+neupan_node:
+  ros__parameters:
+    # Robot identification
+    robot_type: 'Go2Edu'
+    robot_description: 'Unitree Go2Edu'
+
+    # Configuration file paths (relative to robot directory)
+    planner_config_file: 'planner.yaml'
+    dune_checkpoint_file: 'models/dune_model_5000_epoch_unitree_go2_800x350.pth'
+
+    # TF Frame configuration
+    map_frame: 'map'
+    base_frame: 'vehicle'
+    lidar_frame: 'sensor'
+
+    # Visualization control
+    enable_visualization: true   # Master switch for all visualization
+    enable_dune_markers: true    # Enable DUNE point cloud markers
+    enable_nrmp_markers: true    # Enable NRMP point cloud markers
+    enable_robot_marker: true    # Enable robot footprint marker
+    marker_size: 0.05
+    marker_z: 1.0
+
+    # Scan processing
+    scan_angle_max: 3.14
+    scan_angle_min: -3.14
+    scan_downsample: 1
+    scan_range_max: 5.0
+    scan_range_min: 0.01
+    flip_angle: false
+    refresh_initial_path: true
+    include_initial_path_direction: false
+    control_frequency: 50.0  # Control loop frequency (Hz)
+
+    # Obstacle input configuration
+    obstacle_input_type: 'pointcloud'  # Input source: 'laserscan' or 'pointcloud'
+    terrain_map_topic: '/terrain_map'  # PointCloud2 topic (used when obstacle_input_type='pointcloud')
+    reflectivity_threshold: 0.1  # Points with intensity >= threshold are obstacles (non-ground)
+
+    # ========== Topic Configuration (Optional) ==========
+    # Uncomment and modify to customize topic names for your robot
+    # cmd_vel_topic: '/neupan_cmd_vel'
+    # scan_topic: '/scan'
+    # plan_input_topic: '/plan'
+    # goal_topic: '/goal_pose'
+
