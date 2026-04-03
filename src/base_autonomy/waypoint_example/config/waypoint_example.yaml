@@ -1,0 +1,23 @@
+waypointExample:
+  ros__parameters:
+    waypointXYRadius: 0.5
+    waypointZBound: 5.0
+    waitTime: 0.0
+    frameRate: 5.0
+    speed: 1.0
+    sendSpeed: true
+    sendBoundary: true
+
+    # Waypoints: flat [x1, y1, x2, y2, ...] list of 2D goal positions visited in order.
+    # waypoints: [10.5, 5.5, 9.0, 0.65, 0.0, 0.0]
+    waypoints: [10.5, 5.5, 9.0, 0.65, 0.0, 0.0]
+
+    # --- Virtual wall boundaries (optional) ---
+    # Define one or more closed polygon walls using boundary_polygon_0, boundary_polygon_1, ...
+    # Each value is a flat [x1, y1, x2, y2, ...] list of 2D vertices (at least 3 points).
+    # Polygons must be numbered consecutively starting from 0; the first missing index stops loading.
+    # If no boundary_polygon_N parameters are set, the boundary is unlimited.
+    #
+    # Example: two rectangular walls
+    boundary_polygon_0: [-5.0, -1.0,  12.0, -1.0,  12.0, 12.0,  -5.0, 12.0]
+    # boundary_polygon_1: [10.0, 0.0, 15.0, 0.0, 15.0, 4.0, 10.0, 4.0]

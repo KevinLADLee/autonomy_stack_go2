@@ -14,6 +14,15 @@ limitations under the License.
 #include "depth_image_ros2_node.hpp"
 #include <functional>
 
+namespace {
+std::string declare_topic_parameter(rclcpp::Node * node, const std::string & name, const std::string & legacy_name, const std::string & default_value)
+{
+    const auto value = node->declare_parameter<std::string>(name, default_value);
+    const auto legacy_value = node->declare_parameter<std::string>(legacy_name, default_value);
+    return legacy_value != default_value ? legacy_value : value;
+}
+}  // namespace
+
 DepthImageRos2Node::DepthImageRos2Node(const rclcpp::NodeOptions & options)
     : Node("depth_image_ros2_node", options)
 {
@@ -21,11 +30,11 @@ DepthImageRos2Node::DepthImageRos2Node(const rclcpp::NodeOptions & options)
 
     depth_converter_ = std::make_unique<PointCloudToDepthConverter>(camera_params);
     
-    cloud_raw_topic_ = this->declare_parameter<std::string>("cloud_raw_topic", "/odin1/cloud_raw");
-    color_compressed_topic_ = this->declare_parameter<std::string>("color_compressed_topic", "/odin1/image/compressed");
-    color_raw_topic_ = this->declare_parameter<std::string>("color_raw_topic", "/odin1/image");
-    depth_image_topic_ = this->declare_parameter<std::string>("depth_image_topic", "/odin1/depth_img_competetion");
-    depth_cloud_topic_ = this->declare_parameter<std::string>("depth_cloud_topic", "/odin1/depth_img_competetion_cloud");
+    cloud_raw_topic_ = declare_topic_parameter(this, "topics.cloud_raw", "cloud_raw_topic", "/odin1/cloud_raw");
+    color_compressed_topic_ = declare_topic_parameter(this, "topics.color_compressed", "color_compressed_topic", "/odin1/image/compressed");
+    color_raw_topic_ = declare_topic_parameter(this, "topics.color_raw", "color_raw_topic", "/odin1/image");
+    depth_image_topic_ = declare_topic_parameter(this, "topics.depth_image", "depth_image_topic", "/odin1/depth_img_competetion");
+    depth_cloud_topic_ = declare_topic_parameter(this, "topics.depth_cloud", "depth_cloud_topic", "/odin1/depth_img_competetion_cloud");
 
     RCLCPP_INFO_STREAM(this->get_logger(), 
                        "\n  cloud_raw_topic: " << cloud_raw_topic_

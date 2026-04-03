@@ -1,32 +1,67 @@
 <launch>
-    <!-- 
-        Usage: roslaunch odin_ros_driver odin1_ros1.launch
-    -->
-    
-    <!-- Set node name -->
     <arg name="node_name" default="host_sdk_sample"/>
-    
-    <!-- Set parameter file path -->
     <arg name="config_file" default="$(find odin_ros_driver)/config/control_command.yaml"/>
-    
-    <!-- Set RViz configuration file path -->
+    <arg name="output_root" default="$(env HOME)/.ros/odin_ros_driver"/>
+    <arg name="calib_file" default="$(arg output_root)/calib/calib.yaml"/>
+    <arg name="command_file" default="/tmp/odin_command.txt"/>
     <arg name="rviz_config" default="$(find odin_ros_driver)/config/odin_ros.rviz"/>
-    
-    <!-- Launch main node -->
+
+    <arg name="imu_topic" default="odin1/imu"/>
+    <arg name="image_topic" default="odin1/image"/>
+    <arg name="cloud_raw_topic" default="odin1/cloud_raw"/>
+    <arg name="cloud_slam_topic" default="odin1/cloud_slam"/>
+    <arg name="odometry_topic" default="odin1/odometry"/>
+    <arg name="odometry_highfreq_topic" default="odin1/odometry_highfreq"/>
+    <arg name="path_topic" default="odin1/path"/>
+    <arg name="camera_pose_visual_topic" default="odin1/camera_pose_visual"/>
+    <arg name="cloud_render_topic" default="odin1/cloud_render"/>
+    <arg name="image_compressed_topic" default="odin1/image/compressed"/>
+    <arg name="image_undistorted_topic" default="odin1/image/undistorted"/>
+    <arg name="image_intensity_gray_topic" default="odin1/image/intensity_gray"/>
+    <arg name="color_raw_topic" default="/odin1/image"/>
+    <arg name="color_compressed_topic" default="/odin1/image/compressed"/>
+    <arg name="depth_image_topic" default="/odin1/depth_img_competetion"/>
+    <arg name="depth_cloud_topic" default="/odin1/depth_img_competetion_cloud"/>
+    <arg name="reprojected_image_topic" default="/odin1/reprojected_image"/>
+
     <node name="$(arg node_name)" pkg="odin_ros_driver" type="host_sdk_sample" output="screen">
         <param name="config_file" value="$(arg config_file)"/>
+        <param name="output_root" value="$(arg output_root)"/>
+        <param name="calib_file" value="$(arg calib_file)"/>
+        <param name="command_file" value="$(arg command_file)"/>
+        <param name="topics/imu" value="$(arg imu_topic)"/>
+        <param name="topics/image" value="$(arg image_topic)"/>
+        <param name="topics/cloud_raw" value="$(arg cloud_raw_topic)"/>
+        <param name="topics/cloud_slam" value="$(arg cloud_slam_topic)"/>
+        <param name="topics/odometry" value="$(arg odometry_topic)"/>
+        <param name="topics/odometry_highfreq" value="$(arg odometry_highfreq_topic)"/>
+        <param name="topics/path" value="$(arg path_topic)"/>
+        <param name="topics/camera_pose_visual" value="$(arg camera_pose_visual_topic)"/>
+        <param name="topics/cloud_render" value="$(arg cloud_render_topic)"/>
+        <param name="topics/image_compressed" value="$(arg image_compressed_topic)"/>
+        <param name="topics/image_undistorted" value="$(arg image_undistorted_topic)"/>
+        <param name="topics/image_intensity_gray" value="$(arg image_intensity_gray_topic)"/>
     </node>
 
-    <node pkg="odin_ros_driver" type="pcd2depth_node" name="pcd2depth_node" output="screen" >
-        <rosparam command="load" file="$(find odin_ros_driver)/config/control_command.yaml"/>
-        <param name="calib_file_path" value="$(find odin_ros_driver)/config/calib.yaml"/>
+    <node pkg="odin_ros_driver" type="pcd2depth_node" name="pcd2depth_node" output="screen">
+        <rosparam command="load" file="$(arg config_file)"/>
+        <param name="calib_file" value="$(arg calib_file)"/>
+        <param name="calib_file_path" value="$(arg calib_file)"/>
+        <param name="topics/cloud_raw" value="$(arg cloud_raw_topic)"/>
+        <param name="topics/color_raw" value="$(arg color_raw_topic)"/>
+        <param name="topics/color_compressed" value="$(arg color_compressed_topic)"/>
+        <param name="topics/depth_image" value="$(arg depth_image_topic)"/>
+        <param name="topics/depth_cloud" value="$(arg depth_cloud_topic)"/>
     </node>
 
-    <node pkg="odin_ros_driver" type="cloud_reprojection_node" name="cloud_reprojection_node" output="screen" >
-        <rosparam command="load" file="$(find odin_ros_driver)/config/control_command.yaml"/>
-        <param name="calib_file_path" value="$(find odin_ros_driver)/config/calib.yaml"/>
+    <node pkg="odin_ros_driver" type="cloud_reprojection_node" name="cloud_reprojection_node" output="screen">
+        <rosparam command="load" file="$(arg config_file)"/>
+        <param name="calib_file" value="$(arg calib_file)"/>
+        <param name="calib_file_path" value="$(arg calib_file)"/>
+        <param name="topics/cloud_slam" value="$(arg cloud_slam_topic)"/>
+        <param name="topics/odometry" value="$(arg odometry_topic)"/>
+        <param name="topics/reprojected_image" value="$(arg reprojected_image_topic)"/>
     </node>
-    
-    <!-- Launch RViz with configuration -->
+
     <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rviz_config)" output="screen"/>
 </launch>

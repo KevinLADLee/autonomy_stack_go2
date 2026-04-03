@@ -1,0 +1,19 @@
+route_network_navigator:
+  ros__parameters:
+    route_file: ""
+    goal_publish_rate_hz: 5.0
+    arrival_check_rate_hz: 10.0
+    replan_on_goal_update: true
+    allow_goal_snap_to_edge: false
+    max_goal_snap_distance_m: 3.0
+    max_start_snap_distance_m: 3.0
+    default_frame_id: "map"
+    path_progress_timeout_sec: 20.0
+    xy_reach_fallback: 0.4
+    yaw_reach_fallback: 0.35
+    enable_visualization: true
+    target_goal_topic: "/route_network_navigator/target_goal"
+    state_estimation_topic: "/state_estimation"
+    goal_pose_topic: "/goal_pose"
+    planned_path_topic: "/route_network_navigator/planned_path"
+    status_topic: "/route_network_navigator/status"

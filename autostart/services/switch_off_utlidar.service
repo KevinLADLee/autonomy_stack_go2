@@ -1,0 +1,18 @@
+[Unit]
+Description=Switch off UTLidar at boot
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/home/nv/autonomy_stack_go2/autostart/scripts/switch_off_utlidar.sh
+
+[Service]
+Type=oneshot
+User=nv
+WorkingDirectory=/home/nv/autonomy_stack_go2
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash /home/nv/autonomy_stack_go2/autostart/scripts/switch_off_utlidar.sh
+TimeoutStartSec=120
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

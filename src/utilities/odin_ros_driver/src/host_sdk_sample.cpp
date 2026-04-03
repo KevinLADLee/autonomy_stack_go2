@@ -74,6 +74,8 @@ static std::thread g_param_monitor_thread;
 
 // Command file monitoring
 static std::string g_command_file_path = "";
+static std::filesystem::path g_output_root_path;
+static std::filesystem::path g_calib_file_path;
 
 static std::mutex g_rgb_mutex;
 static std::shared_ptr<cv::Mat> g_latest_bgr;
@@ -138,6 +140,85 @@ FILE* dev_status_csv_file = nullptr;
 std::filesystem::path map_root_dir_;
 
 char driver_start_time[32];
+
+static std::filesystem::path expand_user_path(const std::string& input) {
+    if (input.empty()) {
+        return {};
+    }
+    if (input == "~") {
+        if (const char* home = std::getenv("HOME")) {
+            return std::filesystem::path(home);
+        }
+    }
+    if (input.rfind("~/", 0) == 0) {
+        if (const char* home = std::getenv("HOME")) {
+            return std::filesystem::path(home) / input.substr(2);
+        }
+    }
+    return std::filesystem::path(input);
+}
+
+static std::filesystem::path default_output_root() {
+    if (const char* home = std::getenv("HOME")) {
+        return std::filesystem::path(home) / ".ros" / "odin_ros_driver";
+    }
+    return std::filesystem::current_path() / ".ros" / "odin_ros_driver";
+}
+
+#ifdef ROS2
+static std::string declare_string_parameter(
+    const rclcpp::Node::SharedPtr& node, const std::string& name, const std::string& default_value)
+{
+    return node->declare_parameter<std::string>(name, default_value);
+}
+
+static HostPublisherTopics load_host_topics(const rclcpp::Node::SharedPtr& node) {
+    HostPublisherTopics topics = default_host_publisher_topics();
+    topics.imu = declare_string_parameter(node, "topics.imu", topics.imu);
+    topics.image = declare_string_parameter(node, "topics.image", topics.image);
+    topics.cloud_raw = declare_string_parameter(node, "topics.cloud_raw", topics.cloud_raw);
+    topics.cloud_slam = declare_string_parameter(node, "topics.cloud_slam", topics.cloud_slam);
+    topics.odometry = declare_string_parameter(node, "topics.odometry", topics.odometry);
+    topics.odometry_highfreq = declare_string_parameter(node, "topics.odometry_highfreq", topics.odometry_highfreq);
+    topics.path = declare_string_parameter(node, "topics.path", topics.path);
+    topics.camera_pose_visual = declare_string_parameter(node, "topics.camera_pose_visual", topics.camera_pose_visual);
+    topics.cloud_render = declare_string_parameter(node, "topics.cloud_render", topics.cloud_render);
+    topics.image_compressed = declare_string_parameter(node, "topics.image_compressed", topics.image_compressed);
+    topics.image_undistorted = declare_string_parameter(node, "topics.image_undistorted", topics.image_undistorted);
+    topics.image_intensity_gray = declare_string_parameter(node, "topics.image_intensity_gray", topics.image_intensity_gray);
+    return topics;
+}
+#else
+static std::string get_private_string_param(
+    ros::NodeHandle& pnh, const std::string& primary, const std::string& secondary, const std::string& default_value)
+{
+    std::string value;
+    if (pnh.getParam(primary, value)) {
+        return value;
+    }
+    if (!secondary.empty() && pnh.getParam(secondary, value)) {
+        return value;
+    }
+    return default_value;
+}
+
+static HostPublisherTopics load_host_topics(ros::NodeHandle& pnh) {
+    HostPublisherTopics topics = default_host_publisher_topics();
+    topics.imu = get_private_string_param(pnh, "topics/imu", "topics.imu", topics.imu);
+    topics.image = get_private_string_param(pnh, "topics/image", "topics.image", topics.image);
+    topics.cloud_raw = get_private_string_param(pnh, "topics/cloud_raw", "topics.cloud_raw", topics.cloud_raw);
+    topics.cloud_slam = get_private_string_param(pnh, "topics/cloud_slam", "topics.cloud_slam", topics.cloud_slam);
+    topics.odometry = get_private_string_param(pnh, "topics/odometry", "topics.odometry", topics.odometry);
+    topics.odometry_highfreq = get_private_string_param(pnh, "topics/odometry_highfreq", "topics.odometry_highfreq", topics.odometry_highfreq);
+    topics.path = get_private_string_param(pnh, "topics/path", "topics.path", topics.path);
+    topics.camera_pose_visual = get_private_string_param(pnh, "topics/camera_pose_visual", "topics.camera_pose_visual", topics.camera_pose_visual);
+    topics.cloud_render = get_private_string_param(pnh, "topics/cloud_render", "topics.cloud_render", topics.cloud_render);
+    topics.image_compressed = get_private_string_param(pnh, "topics/image_compressed", "topics.image_compressed", topics.image_compressed);
+    topics.image_undistorted = get_private_string_param(pnh, "topics/image_undistorted", "topics.image_undistorted", topics.image_undistorted);
+    topics.image_intensity_gray = get_private_string_param(pnh, "topics/image_intensity_gray", "topics.image_intensity_gray", topics.image_intensity_gray);
+    return topics;
+}
+#endif
 
 typedef struct  {
     struct timespec start = {0, 0};
@@ -1091,25 +1172,7 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             #endif
             return;
         }
-	const std::string package_name = "odin_ros_driver";
-	std::string config_dir = "";
-	#ifdef ROS2
-	    char* ros_workspace = std::getenv("COLCON_PREFIX_PATH");
-	    if (ros_workspace) {
-		std::string workspace_path(ros_workspace);
-		size_t pos = workspace_path.find("/install");
-		if (pos != std::string::npos) {
-		    config_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/config";
-		} else {
-		    config_dir = ament_index_cpp::get_package_share_directory(package_name) + "/config";
-		}
-	    } else {
-		config_dir = ament_index_cpp::get_package_share_directory(package_name) + "/config";
-	    }
-	#else
-	    config_dir = ros::package::getPath(package_name) + "/config";
-	#endif
-   		 std::cout << "config_dir"<< config_dir <<std::endl;
+	std::string config_dir = g_calib_file_path.parent_path().string();
         #ifdef ROS2
             RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Calibration files will be saved to: %s", config_dir.c_str());
         #else
@@ -1296,10 +1359,10 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             }
         }
         
-        std::string calib_config = config_dir + "/calib.yaml";
-        calib_file_ = calib_config;
+        std::string calib_config = (g_calib_file_path.parent_path() / "calib.yaml").string();
+        calib_file_ = g_calib_file_path.string();
         if (get_calib_file) {
-            if (lidar_get_calib_file(odinDevice, config_dir.c_str())) {
+            if (lidar_get_calib_file(odinDevice, g_calib_file_path.parent_path().string().c_str())) {
                 #ifdef ROS2
                     RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to get calibration file");
                 #else
@@ -1311,6 +1374,18 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
                 return;
             }
             
+            if (g_calib_file_path != std::filesystem::path(calib_config)) {
+                std::error_code calib_copy_ec;
+                std::filesystem::copy_file(calib_config, g_calib_file_path, std::filesystem::copy_options::overwrite_existing, calib_copy_ec);
+                if (calib_copy_ec) {
+                    #ifdef ROS2
+                        RCLCPP_WARN(rclcpp::get_logger("device_cb"), "Failed to copy calib file to %s: %s", g_calib_file_path.string().c_str(), calib_copy_ec.message().c_str());
+                    #else
+                        ROS_WARN("Failed to copy calib file to %s: %s", g_calib_file_path.string().c_str(), calib_copy_ec.message().c_str());
+                    #endif
+                }
+            }
+
             #ifdef ROS2
                 RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Successfully retrieved calibration files");
             #else
@@ -1595,11 +1670,37 @@ int main(int argc, char *argv[])
 #ifdef ROS2
     rclcpp::init(argc, argv);
     auto node = std::make_shared<rclcpp::Node>("lydros_node");
-    g_ros_object = std::make_shared<MultiSensorPublisher>(node);
+    const std::string package_share_path = get_package_share_path("odin_ros_driver");
+    const auto default_output = default_output_root();
+    const std::string default_output_string = default_output.string();
+    const std::string default_config_file = (std::filesystem::path(package_share_path) / "config" / "control_command.yaml").string();
+    const std::string output_root_string = declare_string_parameter(node, "output_root", default_output_string);
+    const std::filesystem::path output_root = expand_user_path(output_root_string);
+    const std::string config_file = declare_string_parameter(node, "config_file", default_config_file);
+    const std::string calib_file = declare_string_parameter(node, "calib_file", (output_root / "calib" / "calib.yaml").string());
+    g_output_root_path = output_root;
+    g_calib_file_path = expand_user_path(calib_file);
+    g_command_file_path = declare_string_parameter(node, "command_file", "/tmp/odin_command.txt");
+    HostPublisherTopics host_topics = load_host_topics(node);
+    g_ros_object = std::make_shared<MultiSensorPublisher>(node, host_topics);
 #else
     ros::init(argc, argv, "lydros_node");
     ros::NodeHandle nh;
-    g_ros_object = new MultiSensorPublisher(nh);
+    ros::NodeHandle pnh("~");
+    const std::string package_share_path = get_package_share_path("odin_ros_driver");
+    const std::filesystem::path default_output = default_output_root();
+    std::string output_root_string;
+    pnh.param<std::string>("output_root", output_root_string, default_output.string());
+    const std::filesystem::path output_root = expand_user_path(output_root_string);
+    std::string config_file;
+    pnh.param<std::string>("config_file", config_file, (std::filesystem::path(package_share_path) / "config" / "control_command.yaml").string());
+    std::string calib_file;
+    pnh.param<std::string>("calib_file", calib_file, (output_root / "calib" / "calib.yaml").string());
+    g_output_root_path = output_root;
+    g_calib_file_path = expand_user_path(calib_file);
+    pnh.param<std::string>("command_file", g_command_file_path, std::string("/tmp/odin_command.txt"));
+    HostPublisherTopics host_topics = load_host_topics(pnh);
+    g_ros_object = new MultiSensorPublisher(nh, host_topics);
 #endif
 
     // Register signal handlers for Ctrl+C
@@ -1607,17 +1708,9 @@ int main(int argc, char *argv[])
     signal(SIGTERM, signal_handler);
 
     try {
-    #ifdef ROS2
-        std::string package_path = get_package_source_directory();
-        std::cout << "package_path: " << package_path << std::endl;
-    #else
-    	std::string package_path = get_package_share_path("odin_ros_driver");
-    #endif
-        std::string config_dir = package_path + "/config";
-        std::string config_file = config_dir + "/control_command.yaml";
-
-        // Initialize command file path to /tmp/odin_command.txt
-        g_command_file_path = "/tmp/odin_command.txt";
+        const std::filesystem::path calib_path = g_calib_file_path;
+        const std::filesystem::path calib_dir_path = calib_path.parent_path();
+        const std::filesystem::path output_root_path = g_output_root_path;
 
         #ifdef ROS2
             RCLCPP_INFO(rclcpp::get_logger("init"), "Command file path set to: %s", g_command_file_path.c_str());
@@ -1684,37 +1777,18 @@ int main(int argc, char *argv[])
 
         lidar_log_set_level(LIDAR_LOG_INFO);
 
-        const std::string package_name = "odin_ros_driver";
-        std::string data_dir = "";
-        std::string log_dir = "";
-        std::string map_dir = "";
-        #ifdef ROS2
-            char* ros_workspace = std::getenv("COLCON_PREFIX_PATH");
-            if (ros_workspace) {
-                std::string workspace_path(ros_workspace);
-                size_t pos = workspace_path.find("/install");
-                if (pos != std::string::npos) {
-                    data_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/recorddata";
-                    log_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/log";
-                    map_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/map";
-                } else {
-                    data_dir = ament_index_cpp::get_package_share_directory(package_name) + "/recorddata";
-                    log_dir = ament_index_cpp::get_package_share_directory(package_name) + "/log";
-                    map_dir = ament_index_cpp::get_package_share_directory(package_name) + "/map";
-                }
-            } else {
-                data_dir = ament_index_cpp::get_package_share_directory(package_name) + "/recorddata";
-                log_dir = ament_index_cpp::get_package_share_directory(package_name) + "/log";
-                map_dir = ament_index_cpp::get_package_share_directory(package_name) + "/map";
-            }
-        #else
-            data_dir = ros::package::getPath(package_name) + "/recorddata";
-            log_dir = ros::package::getPath(package_name) + "/log";
-            map_dir = ros::package::getPath(package_name) + "/map";
-        #endif
+        const std::filesystem::path data_dir = output_root_path / "recorddata";
+        const std::filesystem::path log_dir = output_root_path / "log";
+        const std::filesystem::path map_dir = output_root_path / "map";
+        std::error_code mkdir_ec;
+        std::filesystem::create_directories(output_root_path, mkdir_ec);
+        std::filesystem::create_directories(calib_dir_path, mkdir_ec);
+        std::filesystem::create_directories(data_dir, mkdir_ec);
+        std::filesystem::create_directories(log_dir, mkdir_ec);
+        std::filesystem::create_directories(map_dir, mkdir_ec);
 
         if (g_record_data) {
-            g_ros_object->initialize_data_logger(data_dir);
+            g_ros_object->initialize_data_logger(data_dir.string());
         }
 
         auto now = std::chrono::system_clock::now();
@@ -1729,12 +1803,12 @@ int main(int argc, char *argv[])
 
         if (g_devstatus_log) {
             std::string folder_name = std::string("Driver_") + std::string(driver_start_time);
-            log_root_dir_ = std::filesystem::path(log_dir) / folder_name;
+            log_root_dir_ = log_dir / folder_name;
             std::filesystem::create_directories(log_root_dir_);
         }
 
         if (g_custom_map_mode == 1 && g_mapping_result_dest_dir == "") {
-            map_root_dir_ = std::filesystem::path(map_dir) / driver_start_time;
+            map_root_dir_ = map_dir / driver_start_time;
             std::filesystem::create_directories(map_root_dir_);
         }
 

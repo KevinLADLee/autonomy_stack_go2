@@ -33,8 +33,16 @@ find_package(pcl_ros REQUIRED)
 add_executable(visualizationTools src/visualizationTools.cpp)
 ament_target_dependencies(visualizationTools rclcpp rclpy std_msgs sensor_msgs nav_msgs geometry_msgs tf2 tf2_ros tf2_geometry_msgs message_filters pcl_ros pcl_conversions)
 
+add_executable(static_pcd_map_publisher src/static_pcd_map_publisher.cpp)
+ament_target_dependencies(static_pcd_map_publisher rclcpp sensor_msgs pcl_ros pcl_conversions)
+
+add_executable(static_occupancy_map_publisher src/static_occupancy_map_publisher.cpp)
+ament_target_dependencies(static_occupancy_map_publisher rclcpp nav_msgs)
+
 install(TARGETS
   visualizationTools
+  static_pcd_map_publisher
+  static_occupancy_map_publisher
   DESTINATION lib/${PROJECT_NAME})
 
 install(

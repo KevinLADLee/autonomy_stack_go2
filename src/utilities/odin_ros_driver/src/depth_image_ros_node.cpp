@@ -14,17 +14,37 @@ limitations under the License.
 #include "depth_image_ros_node.hpp"
 #include <boost/bind.hpp>
 
+namespace {
+std::string get_topic_param(ros::NodeHandle & pnh, const std::string & nested_name, const std::string & dotted_name, const std::string & legacy_name, const std::string & default_value)
+{
+    std::string value;
+    if (pnh.getParam(nested_name, value)) {
+        return value;
+    }
+    if (pnh.getParam(dotted_name, value)) {
+        return value;
+    }
+    if (!legacy_name.empty() && pnh.getParam(legacy_name, value)) {
+        return value;
+    }
+    return default_value;
+}
+}  // namespace
+
 DepthImageRosNode::DepthImageRosNode(ros::NodeHandle &nh, ros::NodeHandle &pnh)
     : nh_(nh), pnh_(pnh), it_(nh_)
 {
     PointCloudToDepthConverter::CameraParams camera_params = loadCameraParams();
 
     depth_converter_ = std::make_unique<PointCloudToDepthConverter>(camera_params);
-    pnh_.param<std::string>("cloud_raw_topic", cloud_raw_topic_, std::string("/odin1/cloud_raw"));
-    pnh_.param<std::string>("color_raw_topic", color_raw_topic_, std::string("/odin1/image"));
-    pnh_.param<std::string>("color_compressed_topic_", color_compressed_topic_, std::string("/odin1/image/compressed"));
-    pnh_.param<std::string>("depth_image_topic", depth_image_topic_, std::string("/odin1/depth_img_competetion"));
-    pnh_.param<std::string>("depth_cloud_topic", depth_cloud_topic_, std::string("/odin1/depth_img_competetion_cloud"));
+    cloud_raw_topic_ = get_topic_param(pnh_, "topics/cloud_raw", "topics.cloud_raw", "cloud_raw_topic", "/odin1/cloud_raw");
+    color_raw_topic_ = get_topic_param(pnh_, "topics/color_raw", "topics.color_raw", "color_raw_topic", "/odin1/image");
+    color_compressed_topic_ = get_topic_param(pnh_, "topics/color_compressed", "topics.color_compressed", "color_compressed_topic", "/odin1/image/compressed");
+    if (color_compressed_topic_ == "/odin1/image/compressed") {
+        color_compressed_topic_ = get_topic_param(pnh_, "topics/color_compressed", "topics.color_compressed", "color_compressed_topic_", color_compressed_topic_);
+    }
+    depth_image_topic_ = get_topic_param(pnh_, "topics/depth_image", "topics.depth_image", "depth_image_topic", "/odin1/depth_img_competetion");
+    depth_cloud_topic_ = get_topic_param(pnh_, "topics/depth_cloud", "topics.depth_cloud", "depth_cloud_topic", "/odin1/depth_img_competetion_cloud");
 
     ROS_INFO_STREAM("\n  cloud_raw_topic: " << cloud_raw_topic_
                 << "\n  color_raw_topic: " << color_raw_topic_

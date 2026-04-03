@@ -20,6 +20,25 @@ limitations under the License.
 #include <string>
 #include "depth_image_ros2_node.hpp"
 #include <rcpputils/filesystem_helper.hpp>
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <filesystem>
+
+namespace {
+std::filesystem::path default_output_root()
+{
+    if (const char * home = std::getenv("HOME")) {
+        return std::filesystem::path(home) / ".ros" / "odin_ros_driver";
+    }
+    return std::filesystem::current_path() / ".ros" / "odin_ros_driver";
+}
+
+std::string declare_topic_parameter(rclcpp::Node * node, const std::string & name, const std::string & legacy_name, const std::string & default_value)
+{
+    const auto value = node->declare_parameter<std::string>(name, default_value);
+    const auto legacy_value = node->declare_parameter<std::string>(legacy_name, default_value);
+    return legacy_value != default_value ? legacy_value : value;
+}
+}  // namespace
 bool fileExists(const std::string& filename) {
     struct stat buffer;
     return (stat(filename.c_str(), &buffer) == 0);
@@ -118,24 +137,6 @@ bool loadCalibParameters(std::shared_ptr<rclcpp::Node> node, const std::string& 
         return false;
     }
 }
-std::string get_package_source_directory() {
-    // 使用 rcpputils::fs::path 替代 std::filesystem::path
-    rcpputils::fs::path current_file(__FILE__);
-    
-    // 回溯到包根目录
-    auto path = current_file.parent_path();
-    
-    // 使用 rcpputils::fs::exists 替代 std::filesystem::exists
-    while (!path.empty() && !rcpputils::fs::exists(path / "package.xml")) {
-        path = path.parent_path();
-    }
-    
-    if (path.empty()) {
-        throw std::runtime_error("Failed to locate package root directory");
-    }
-    
-    return path.string();
-}
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
@@ -143,10 +144,9 @@ int main(int argc, char **argv)
 
     auto node = std::make_shared<rclcpp::Node>("pcd2depth_node");
     RCLCPP_INFO(node->get_logger(), "Node created");
-    std::string package_path = get_package_source_directory();
-    RCLCPP_INFO(node->get_logger(), "Package path: %s", package_path.c_str());
-    
-    std::string config_file = package_path + "/config/control_command.yaml";
+    const std::string package_share = ament_index_cpp::get_package_share_directory("odin_ros_driver");
+    const auto output_root = default_output_root();
+    const std::string config_file = node->declare_parameter<std::string>("config_file", (std::filesystem::path(package_share) / "config" / "control_command.yaml").string());
     RCLCPP_INFO(node->get_logger(), "Loading config from: %s", config_file.c_str());
 
     YAML::Node config = YAML::LoadFile(config_file);
@@ -166,7 +166,11 @@ int main(int argc, char **argv)
         return 0;
     }
     
-    std::string calib_file_path = node->declare_parameter<std::string>("calib_file_path", "");
+    std::string calib_file_path = node->declare_parameter<std::string>("calib_file", (output_root / "calib" / "calib.yaml").string());
+    const auto legacy_calib_file_path = node->declare_parameter<std::string>("calib_file_path", calib_file_path);
+    if (legacy_calib_file_path != calib_file_path) {
+        calib_file_path = legacy_calib_file_path;
+    }
     
     RCLCPP_INFO(node->get_logger(), "Waiting for calib.yaml file at: %s", calib_file_path.c_str());
     while(rclcpp::ok() && !fileExists(calib_file_path))
@@ -208,6 +212,11 @@ int main(int argc, char **argv)
         params_override.push_back(rclcpp::Parameter("cam_0.k6", node->get_parameter("cam_0.k6").as_double()));
         params_override.push_back(rclcpp::Parameter("cam_0.k7", node->get_parameter("cam_0.k7").as_double()));
         params_override.push_back(rclcpp::Parameter("Tcl_0", node->get_parameter("Tcl_0").as_double_array()));
+        params_override.push_back(rclcpp::Parameter("topics.cloud_raw", declare_topic_parameter(node.get(), "topics.cloud_raw", "cloud_raw_topic", "/odin1/cloud_raw")));
+        params_override.push_back(rclcpp::Parameter("topics.color_compressed", declare_topic_parameter(node.get(), "topics.color_compressed", "color_compressed_topic", "/odin1/image/compressed")));
+        params_override.push_back(rclcpp::Parameter("topics.color_raw", declare_topic_parameter(node.get(), "topics.color_raw", "color_raw_topic", "/odin1/image")));
+        params_override.push_back(rclcpp::Parameter("topics.depth_image", declare_topic_parameter(node.get(), "topics.depth_image", "depth_image_topic", "/odin1/depth_img_competetion")));
+        params_override.push_back(rclcpp::Parameter("topics.depth_cloud", declare_topic_parameter(node.get(), "topics.depth_cloud", "depth_cloud_topic", "/odin1/depth_img_competetion_cloud")));
         
         depth_node_options.parameter_overrides(params_override);
         

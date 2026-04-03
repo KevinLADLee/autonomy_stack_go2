@@ -2,6 +2,9 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
+#include <vector>
+#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -11,26 +14,20 @@
 
 #include "std_msgs/msg/float32.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-#include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
 #include "tf2/transform_datatypes.h"
 #include "tf2_ros/transform_broadcaster.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/kdtree/kdtree_flann.h>
+
 
 using namespace std;
 
 const double PI = 3.1415926;
 
-string waypoint_file_dir;
-string boundary_file_dir;
 double waypointXYRadius = 0.5;
 double waypointZBound = 5.0;
 double waitTime = 0;
@@ -41,112 +38,87 @@ double speed = 1.0;
 bool sendSpeed = true;
 bool sendBoundary = true;
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr waypoints(new pcl::PointCloud<pcl::PointXYZ>());
-pcl::PointCloud<pcl::PointXYZ>::Ptr boundary(new pcl::PointCloud<pcl::PointXYZ>());
+std::vector<std::pair<double, double>> waypoints = {{3.0, 0.0}, {6.0, 0.0}};
+std::vector<double> waypointsRaw = {3.0, 0.0, 6.0, 0.0};
 
 float vehicleX = 0, vehicleY = 0, vehicleZ = 0;
 double curTime = 0, waypointTime = 0;
 
 rclcpp::Node::SharedPtr nh;
 
-// reading waypoints from file function
-void readWaypointFile()
+bool loadWaypointsFromParameter()
 {
-  FILE* waypoint_file = fopen(waypoint_file_dir.c_str(), "r");
-  if (waypoint_file == NULL) {
-    RCLCPP_INFO(nh->get_logger(), "Cannot read input files, exit.");
-    exit(1);
+  if (waypointsRaw.empty()) {
+    RCLCPP_ERROR(nh->get_logger(), "Parameter 'waypoints' is empty. Expected [x1, y1, x2, y2, ...].");
+    return false;
   }
 
-  char str[50];
-  int val, pointNum;
-  string strCur, strLast;
-  while (strCur != "end_header") {
-    val = fscanf(waypoint_file, "%s", str);
-    if (val != 1) {
-      RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-      exit(1);
-    }
-
-    strLast = strCur;
-    strCur = string(str);
-
-    if (strCur == "vertex" && strLast == "element") {
-      val = fscanf(waypoint_file, "%d", &pointNum);
-      if (val != 1) {
-        RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-        exit(1);
-      }
-    }
+  if (waypointsRaw.size() % 2 != 0) {
+    RCLCPP_ERROR(nh->get_logger(), "Parameter 'waypoints' size must be even. Current size: %zu", waypointsRaw.size());
+    return false;
   }
 
-  waypoints->clear();
-  pcl::PointXYZ point;
-  int val1, val2, val3;
-  for (int i = 0; i < pointNum; i++) {
-    val1 = fscanf(waypoint_file, "%f", &point.x);
-    val2 = fscanf(waypoint_file, "%f", &point.y);
-    val3 = fscanf(waypoint_file, "%f", &point.z);
-
-    if (val1 != 1 || val2 != 1 || val3 != 1) {
-      RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-      exit(1);
-    }
-
-    waypoints->push_back(point);
+  waypoints.clear();
+  for (size_t i = 0; i < waypointsRaw.size(); i += 2) {
+    waypoints.emplace_back(waypointsRaw[i], waypointsRaw[i + 1]);
   }
 
-  fclose(waypoint_file);
+  return true;
 }
 
-// reading boundary from file function
-void readBoundaryFile()
+// Load boundary polygons from parameters boundary_polygon_0, boundary_polygon_1, ...
+// Each parameter is a flat [x1, y1, x2, y2, ...] list of 2D points forming one closed polygon.
+// Polygons are encoded with z = polygon index so local_planner treats them as independent walls.
+bool loadBoundaryPolygonsFromParameter(geometry_msgs::msg::PolygonStamped& boundaryMsgs)
 {
-  FILE* boundary_file = fopen(boundary_file_dir.c_str(), "r");
-  if (boundary_file == NULL) {
-    RCLCPP_INFO(nh->get_logger(), "Cannot read input files, exit.");
-    exit(1);
-  }
+  boundaryMsgs.polygon.points.clear();
+  int polygonCount = 0;
 
-  char str[50];
-  int val, pointNum;
-  string strCur, strLast;
-  while (strCur != "end_header") {
-    val = fscanf(boundary_file, "%s", str);
-    if (val != 1) {
-      RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
+  for (int idx = 0; ; idx++) {
+    std::string paramName = "boundary_polygon_" + std::to_string(idx);
+    std::vector<double> rawPoints;
+    nh->declare_parameter<std::vector<double>>(paramName, std::vector<double>());
+    nh->get_parameter(paramName, rawPoints);
+
+    if (rawPoints.empty()) {
+      break;  // No more polygons (must be consecutive starting from 0)
+    }
+
+    if (rawPoints.size() % 2 != 0) {
+      RCLCPP_ERROR(nh->get_logger(), "Parameter '%s' must have an even number of values (x,y pairs). Got %zu.",
+                   paramName.c_str(), rawPoints.size());
       exit(1);
     }
 
-    strLast = strCur;
-    strCur = string(str);
-
-    if (strCur == "vertex" && strLast == "element") {
-      val = fscanf(boundary_file, "%d", &pointNum);
-      if (val != 1) {
-        RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
-        exit(1);
-      }
-    }
-  }
-
-  boundary->clear();
-  pcl::PointXYZ point;
-  int val1, val2, val3;
-  for (int i = 0; i < pointNum; i++) {
-    val1 = fscanf(boundary_file, "%f", &point.x);
-    val2 = fscanf(boundary_file, "%f", &point.y);
-    val3 = fscanf(boundary_file, "%f", &point.z);
-
-    if (val1 != 1 || val2 != 1 || val3 != 1) {
-      RCLCPP_INFO(nh->get_logger(), "Error reading input files, exit.");
+    if (rawPoints.size() < 6) {
+      RCLCPP_ERROR(nh->get_logger(), "Parameter '%s' needs at least 3 points (6 values).",
+                   paramName.c_str());
       exit(1);
     }
 
-    boundary->push_back(point);
+    float z = static_cast<float>(idx);
+    size_t nPoints = rawPoints.size() / 2;
+
+    for (size_t i = 0; i < nPoints; i++) {
+      geometry_msgs::msg::Point32 p;
+      p.x = static_cast<float>(rawPoints[i * 2]);
+      p.y = static_cast<float>(rawPoints[i * 2 + 1]);
+      p.z = z;
+      boundaryMsgs.polygon.points.push_back(p);
+    }
+
+    // Close the polygon by repeating its first point (same z)
+    geometry_msgs::msg::Point32 closeP;
+    closeP.x = static_cast<float>(rawPoints[0]);
+    closeP.y = static_cast<float>(rawPoints[1]);
+    closeP.z = z;
+    boundaryMsgs.polygon.points.push_back(closeP);
+
+    polygonCount++;
+    RCLCPP_INFO(nh->get_logger(), "Loaded boundary_polygon_%d with %zu points.", idx, nPoints);
   }
 
-  fclose(boundary_file);
+  return polygonCount > 0;
 }
 
 // vehicle pose callback function
@@ -163,8 +135,6 @@ int main(int argc, char** argv)
   rclcpp::init(argc, argv);
   nh = rclcpp::Node::make_shared("waypointExample");
 
-  nh->declare_parameter<std::string>("waypoint_file_dir", waypoint_file_dir);
-  nh->declare_parameter<std::string>("boundary_file_dir", boundary_file_dir);
   nh->declare_parameter<double>("waypointXYRadius", waypointXYRadius);
   nh->declare_parameter<double>("waypointZBound", waypointZBound);
   nh->declare_parameter<double>("waitTime", waitTime);
@@ -172,9 +142,8 @@ int main(int argc, char** argv)
   nh->declare_parameter<double>("speed", speed);
   nh->declare_parameter<bool>("sendSpeed", sendSpeed);
   nh->declare_parameter<bool>("sendBoundary", sendBoundary);
+  nh->declare_parameter<std::vector<double>>("waypoints", waypointsRaw);
 
-  nh->get_parameter("waypoint_file_dir", waypoint_file_dir);
-  nh->get_parameter("boundary_file_dir", boundary_file_dir);
   nh->get_parameter("waypointXYRadius", waypointXYRadius);
   nh->get_parameter("waypointZBound", waypointZBound);
   nh->get_parameter("waitTime", waitTime);
@@ -182,52 +151,60 @@ int main(int argc, char** argv)
   nh->get_parameter("speed", speed);
   nh->get_parameter("sendSpeed", sendSpeed);
   nh->get_parameter("sendBoundary", sendBoundary);
+  nh->get_parameter("waypoints", waypointsRaw);
+
+  if (!loadWaypointsFromParameter()) {
+    exit(1);
+  }
+
+  if (frameRate <= 0.0) {
+    RCLCPP_ERROR(nh->get_logger(), "Parameter 'frameRate' must be > 0. Current value: %.3f", frameRate);
+    exit(1);
+  }
   
   auto subPose = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, poseHandler);
-  
-  auto pubWaypoint = nh->create_publisher<geometry_msgs::msg::PointStamped>("/way_point", 5);
-  geometry_msgs::msg::PointStamped waypointMsgs;
-  waypointMsgs.header.frame_id = "map";
-  
+
+  // 发布到 /goal_pose，与 rviz 一致
+  auto pubGoalPose = nh->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 5);
+  geometry_msgs::msg::PoseStamped goalPoseMsgs;
+  goalPoseMsgs.header.frame_id = "map";
+  goalPoseMsgs.pose.orientation.w = 1.0;  // 无旋转
+
   auto pubSpeed = nh->create_publisher<std_msgs::msg::Float32>("/speed", 5);
   std_msgs::msg::Float32 speedMsgs;
-  
+
   auto pubBoundary = nh->create_publisher<geometry_msgs::msg::PolygonStamped>("/navigation_boundary", 5);
   geometry_msgs::msg::PolygonStamped boundaryMsgs;
   boundaryMsgs.header.frame_id = "map";
 
-  // read waypoints from file
-  readWaypointFile();
-
-  // read boundary from file
+  // Load boundary polygons; if none configured, boundary is unlimited.
   if (sendBoundary) {
-    readBoundaryFile();
-
-    int boundarySize = boundary->points.size();
-    boundaryMsgs.polygon.points.resize(boundarySize);
-    for (int i = 0; i < boundarySize; i++) {
-      boundaryMsgs.polygon.points[i].x = boundary->points[i].x;
-      boundaryMsgs.polygon.points[i].y = boundary->points[i].y;
-      boundaryMsgs.polygon.points[i].z = boundary->points[i].z;
+    if (!loadBoundaryPolygonsFromParameter(boundaryMsgs)) {
+      sendBoundary = false;
+      RCLCPP_WARN(nh->get_logger(), "No boundary polygons configured. Boundary will be unlimited.");
     }
   }
 
   int wayPointID = 0;
-  int waypointSize = waypoints->points.size();
+  int waypointSize = static_cast<int>(waypoints.size());
 
   if (waypointSize == 0) {
     RCLCPP_INFO(nh->get_logger(), "No waypoint available, exit.");
     exit(1);
   }
 
+  RCLCPP_INFO(nh->get_logger(), "Waypoint example: publishing %d goals to /goal_pose.", waypointSize);
+
   rclcpp::Rate rate(100);
   bool status = rclcpp::ok();
   while (status) {
     rclcpp::spin_some(nh);
 
-    float disX = vehicleX - waypoints->points[wayPointID].x;
-    float disY = vehicleY - waypoints->points[wayPointID].y;
-    float disZ = vehicleZ - waypoints->points[wayPointID].z;
+    double gx = waypoints[wayPointID].first;
+    double gy = waypoints[wayPointID].second;
+    float disX = vehicleX - gx;
+    float disY = vehicleY - gy;
+    float disZ = vehicleZ - 0.0;
 
     // start waiting if the current waypoint is reached
     if (sqrt(disX * disX + disY * disY) < waypointXYRadius && fabs(disZ) < waypointZBound && !isWaiting) {
@@ -241,14 +218,14 @@ int main(int argc, char** argv)
       isWaiting = false;
     }
 
-    // publish waypoint, speed, and boundary messages at certain frame rate
+    // publish goal_pose, speed, and boundary messages at certain frame rate
     if (curTime - waypointTime > 1.0 / frameRate) {
       if (!isWaiting) {
-        waypointMsgs.header.stamp = rclcpp::Time(static_cast<uint64_t>(curTime * 1e9));
-        waypointMsgs.point.x = waypoints->points[wayPointID].x;
-        waypointMsgs.point.y = waypoints->points[wayPointID].y;
-        waypointMsgs.point.z = waypoints->points[wayPointID].z;
-        pubWaypoint->publish(waypointMsgs);
+        goalPoseMsgs.header.stamp = nh->now();
+        goalPoseMsgs.pose.position.x = waypoints[wayPointID].first;
+        goalPoseMsgs.pose.position.y = waypoints[wayPointID].second;
+        goalPoseMsgs.pose.position.z = 0.0;
+        pubGoalPose->publish(goalPoseMsgs);
       }
 
       if (sendSpeed) {

@@ -14,6 +14,17 @@ limitations under the License.
 #include <ros/ros.h>
 #include <fstream>
 #include <sys/stat.h>
+#include <filesystem>
+
+namespace {
+std::filesystem::path default_output_root()
+{
+    if (const char * home = std::getenv("HOME")) {
+        return std::filesystem::path(home) / ".ros" / "odin_ros_driver";
+    }
+    return std::filesystem::current_path() / ".ros" / "odin_ros_driver";
+}
+}  // namespace
 
 #include "depth_image_ros_node.hpp"
 
@@ -35,8 +46,12 @@ int main(int argc, char **argv)
         return 0;
     }
     
+    const auto default_output = default_output_root();
     std::string calib_file_path;
-    pnh.param<std::string>("calib_file_path", calib_file_path, "");
+    pnh.param<std::string>("calib_file", calib_file_path, (default_output / "calib" / "calib.yaml").string());
+    if (calib_file_path.empty()) {
+        pnh.param<std::string>("calib_file_path", calib_file_path, std::string(""));
+    }
     
     ROS_INFO("Waiting for calib.yaml file at: %s", calib_file_path.c_str());
     while(ros::ok() && !fileExists(calib_file_path))
